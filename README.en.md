@@ -133,29 +133,25 @@ cp .env.example .env
 
 Open the `.env` file and fill in the required API keys:
 
-#### 🔑 Essential Configuration
+#### 🔑 Essential Configuration - LLM and Embedding
 
-**LLM Provider Choice** (pick one):
-- **Option A: OpenRouter** (Recommended, supports multiple models)
-  1. Go to [OpenRouter](https://openrouter.ai/keys) to register and get API key
-  2. Configure:
-     ```env
-     SOUL_LLM_PROVIDER=openrouter
-     OPENROUTER_API_KEY=sk-or-v1-xxx...
-     ```
+OpenSoul supports flexible combinations of LLM providers and embedding models:
 
-- **Option B: Anthropic**
-  1. Go to [Anthropic Console](https://console.anthropic.com/) to get API key
-  2. Configure:
-     ```env
-     SOUL_LLM_PROVIDER=anthropic
-     ANTHROPIC_API_KEY=sk-ant-xxx...
-     ```
+**LLM Provider Options**:
+- **OpenRouter**: Supports Claude, GPT-4, Gemini and more - switch anytime
+- **Anthropic**: Official Claude API
 
-**Embedding Model**:
-- Requires OpenAI API key (for `text-embedding-3-small`)
-- Go to [OpenAI Platform](https://platform.openai.com/) to apply
-- Set `OPENAI_API_KEY=sk-xxx...`
+**Embedding Model Options**:
+- **OpenAI**: `text-embedding-3-small` (Recommended - good quality, low cost)
+- **Google**: `models/embedding-001`
+- **OpenRouter**: Multiple embedding models supported
+
+**Key Features**:
+- ✅ LLM and embedding can be configured independently (different providers)
+- ✅ Switch models without restarting services
+- ✅ `.env.example` provides three complete configuration plans
+
+See `.env.example` for detailed configuration options and copy the appropriate plan to `.env`.
 
 **Gmail Integration** (Optional):
 - For email processing, requires Google Cloud Console OAuth2:
@@ -164,6 +160,21 @@ Open the `.env` file and fill in the required API keys:
   3. Create OAuth2 credentials (type: Desktop Application)
   4. Download credentials JSON to `workspace/credentials.json`
   5. First run will auto-generate OAuth2 flow, creating `workspace/token.json`
+
+**Dream Reflection Telegram Notifications** (Optional):
+- To receive dream reflections on Telegram (uses OpenClaw's Telegram Bot):
+  1. Ensure `openclaw/.env` has Telegram Bot Token configured:
+     ```env
+     TELEGRAM_BOT_TOKEN=123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11
+     ```
+  2. Enable dream Telegram notifications in `.env`:
+     ```env
+     SOUL_DREAM_TELEGRAM_NOTIFY=true
+     SOUL_TELEGRAM_CHAT_ID=your-chat-id  # Optional
+     ```
+  3. Restart service - dream reflections will auto-send to Telegram
+
+  **✨ Advantage**: No duplicate configuration needed - directly uses OpenClaw's existing Bot
 
 See `.env.example` for all configuration options.
 

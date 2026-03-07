@@ -133,29 +133,25 @@ cp .env.example .env
 
 開啟 `.env` 文件並填入以下必要的 API 密鑰：
 
-#### 🔑 必要配置
+#### 🔑 必要配置 - LLM 和 Embedding
 
-**LLM 提供者選擇**（二選一）：
-- **選項 A：OpenRouter**（推薦，支持多種模型）
-  1. 前往 [OpenRouter](https://openrouter.ai/keys) 註冊並取得 API 金鑰
-  2. 設置：
-     ```env
-     SOUL_LLM_PROVIDER=openrouter
-     OPENROUTER_API_KEY=sk-or-v1-xxx...
-     ```
+openSOUL 支持多種 LLM 提供者和 Embedding 模型的靈活組合：
 
-- **選項 B：Anthropic**
-  1. 前往 [Anthropic Console](https://console.anthropic.com/) 取得 API 金鑰
-  2. 設置：
-     ```env
-     SOUL_LLM_PROVIDER=anthropic
-     ANTHROPIC_API_KEY=sk-ant-xxx...
-     ```
+**LLM 提供者選項**：
+- **OpenRouter**：支持 Claude、GPT-4、Gemini 等多個模型，可隨時切換
+- **Anthropic**：專用 Claude 官方 API
 
-**嵌入模型**：
-- 需要 OpenAI API 金鑰（用於 `text-embedding-3-small`）
-- 前往 [OpenAI Platform](https://platform.openai.com/) 申請
-- 設置 `OPENAI_API_KEY=sk-xxx...`
+**Embedding 模型選項**：
+- **OpenAI**：`text-embedding-3-small`（推薦，質量好、成本低）
+- **Google**：`google/gemini-embedding-001`
+- **OpenRouter**：支持多個 Embedding 模型
+
+**功能特性**：
+- ✅ LLM 和 Embedding 可獨立配置（不必相同提供者）
+- ✅ 無需重啟服務即可切換模型
+- ✅ `.env.example` 提供了三種完整配置方案
+
+詳細配置見 `.env.example` 中的註釋說明，複製相應方案到 `.env` 即可。
 
 **Gmail 集成**（可選）：
 - 若要使用郵件處理功能，需要 Google Cloud Console OAuth2 認證：
