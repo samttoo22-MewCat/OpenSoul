@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Soul Note 面板</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft JhengHei', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+
+        .header {
+            color: white;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .main-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 40px rgba(0,0,0,0.3);
+        }
+
+        .card h2 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 1.5em;
+            border-bottom: 3px solid #667eea;
+            padding-bottom: 10px;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #555;
+            font-weight: 600;
+            font-size: 0.95em;
+        }
+
+        .form-group input,
+        .form-group textarea,
+        .form-group select {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            font-size: 1em;
+            font-family: inherit;
+            transition: border-color 0.3s;
+        }
+
+        .form-group input:focus,
+        .form-group textarea:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .form-group textarea {
+            resize: vertical;
+            min-height: 100px;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            font-size: 1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .btn-primary {
+            background: #667eea;
+            color: white;
+            width: 100%;
+        }
+
+        .btn-primary:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: #48bb78;
+            color: white;
+            margin-right: 10px;
+        }
+
+        .btn-secondary:hover {
+            background: #38a169;
+        }
+
+        .btn-danger {
+            background: #f56565;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #e53e3e;
+        }
+
+        .quick-actions {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .quick-actions {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .quick-btn {
+            padding: 15px;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 0.9em;
+            color: white;
+            text-align: center;
+        }
+
+        .quick-btn-add {
+            background: #667eea;
+        }
+
+        .quick-btn-view {
+            background: #48bb78;
+        }
+
+        .quick-btn-export {
+            background: #ed8936;
+        }
+
+        .quick-btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+
+        .notes-list {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+
+        .note-item {
+            padding: 15px;
+            border-left: 4px solid #667eea;
+            background: #f7fafc;
+            margin-bottom: 12px;
+            border-radius: 6px;
+            transition: all 0.3s;
+        }
+
+        .note-item:hover {
+            background: #edf2f7;
+            transform: translateX(5px);
+        }
+
+        .note-time {
+            font-size: 0.85em;
+            color: #888;
+            margin-bottom: 5px;
+        }
+
+        .note-category {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.8em;
+            font-weight: 600;
+            margin-right: 8px;
+            margin-bottom: 8px;
+        }
+
+        .category-discovery {
+            background: #bee3f8;
+            color: #2c5282;
+        }
+
+        .category-error {
+            background: #fed7d7;
+            color: #742a2a;
+        }
+
+        .category-memory_update {
+            background: #c6f6d5;
+            color: #22543d;
+        }
+
+        .category-neurochemistry {
+            background: #feebc8;
+            color: #7c2d12;
+        }
+
+        .category-reflection {
+            background: #e9d8fd;
+            color: #553399;
+        }
+
+        .note-content {
+            color: #333;
+            margin-bottom: 8px;
+            line-height: 1.5;
+        }
+
+        .note-tags {
+            font-size: 0.8em;
+            color: #666;
+        }
+
+        .tag {
+            display: inline-block;
+            background: #eee;
+            padding: 2px 8px;
+            border-radius: 12px;
+            margin-right: 6px;
+            margin-top: 4px;
+        }
+
+        .status {
+            padding: 12px;
+            border-radius: 6px;
+            margin-bottom: 15px;
+            display: none;
+        }
+
+        .status.show {
+            display: block;
+        }
+
+        .status-success {
+            background: #c6f6d5;
+            color: #22543d;
+            border: 1px solid #9ae6b4;
+        }
+
+        .status-error {
+            background: #fed7d7;
+            color: #742a2a;
+            border: 1px solid #fc8181;
+        }
+
+        .status-info {
+            background: #bee3f8;
+            color: #2c5282;
+            border: 1px solid #90cdf4;
+        }
+
+        .category-select {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+        }
+
+        .category-radio {
+            display: flex;
+            align-items: center;
+        }
+
+        .category-radio input[type="radio"] {
+            margin-right: 8px;
+            width: auto;
+            cursor: pointer;
+        }
+
+        .category-radio label {
+            margin: 0;
+            cursor: pointer;
+            font-weight: normal;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: #999;
+        }
+
+        .empty-state-icon {
+            font-size: 3em;
+            margin-bottom: 10px;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(102, 126, 234, 0.3);
+            border-top-color: #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 8px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .stats {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+
+        .stat-number {
+            font-size: 2em;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 5px;
+        }
+
+        .stat-label {
+            font-size: 0.9em;
+            color: #888;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>✨ Soul Note 面板</h1>
+            <p>個人自我反思與記憶管理系統</p>
+        </div>
+
+        <div class="stats" id="stats">
+            <div class="stat-card">
+                <div class="stat-number" id="total-notes">0</div>
+                <div class="stat-label">總筆記</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="today-notes">0</div>
+                <div class="stat-label">今日筆記</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="total-reflections">0</div>
+                <div class="stat-label">反思次數</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="auto-compress">30m</div>
+                <div class="stat-label">自動壓縮</div>
+            </div>
+        </div>
+
+        <div class="quick-actions">
+            <button class="quick-btn quick-btn-add" onclick="showSection('add')">
+                ➕ 添加筆記
+            </button>
+            <button class="quick-btn quick-btn-view" onclick="showSection('view')">
+                📋 查看筆記
+            </button>
+            <button class="quick-btn quick-btn-export" onclick="exportNotes()">
+                📤 導出反思
+            </button>
+        </div>
+
+        <div id="status" class="status"></div>
+
+        <div class="main-grid">
+            <div id="add-section" style="display:none;">
+                <div class="card">
+                    <h2>添加新筆記</h2>
+
+                    <div class="form-group">
+                        <label>內容 *</label>
+                        <textarea id="note-content" placeholder="記錄你的想法、發現或反思..."></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label>類別 *</label>
+                        <div class="category-select">
+                            <div class="category-radio">
+                                <input type="radio" id="cat-discovery" name="category" value="discovery" checked>
+                                <label for="cat-discovery">🔍 發現</label>
+                            </div>
+                            <div class="category-radio">
+                                <input type="radio" id="cat-error" name="category" value="error">
+                                <label for="cat-error">❌ 錯誤</label>
+                            </div>
+                            <div class="category-radio">
+                                <input type="radio" id="cat-memory" name="category" value="memory_update">
+                                <label for="cat-memory">💾 記憶</label>
+                            </div>
+                            <div class="category-radio">
+                                <input type="radio" id="cat-neuro" name="category" value="neurochemistry">
+                                <label for="cat-neuro">🧠 神經</label>
+                            </div>
+                            <div class="category-radio">
+                                <input type="radio" id="cat-reflection" name="category" value="reflection">
+                                <label for="cat-reflection">💭 反思</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>標籤（逗號分隔）</label>
+                        <input type="text" id="note-tags" placeholder="如：semantic, vector, feature">
+                    </div>
+
+                    <button class="btn btn-primary" onclick="addNote()">
+                        ✨ 添加筆記
+                    </button>
+                </div>
+            </div>
+
+            <div id="view-section" style="display:none;">
+                <div class="card">
+                    <h2>查看筆記</h2>
+
+                    <div class="form-group">
+                        <label>篩選範圍</label>
+                        <select id="filter-type" onchange="refreshNotes()">
+                            <option value="today">今日筆記</option>
+                            <option value="all">所有筆記</option>
+                            <option value="discovery">發現</option>
+                            <option value="error">錯誤</option>
+                            <option value="memory_update">記憶更新</option>
+                            <option value="neurochemistry">神經化學</option>
+                            <option value="reflection">反思</option>
+                        </select>
+                    </div>
+
+                    <div id="notes-container" class="notes-list">
+                        <div class="empty-state">
+                            <div class="empty-state-icon">📝</div>
+                            <p>點擊「查看筆記」按鈕載入筆記...</p>
+                        </div>
+                    </div>
+
+                    <div style="margin-top: 15px;">
+                        <button class="btn btn-secondary" onclick="compressNotes()">
+                            🗜️ 壓縮今日反思
+                        </button>
+                        <button class="btn btn-secondary" onclick="listReflections()">
+                            📚 查看反思歷史
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="notes-list">
+            <h2 style="margin-bottom: 20px;">📊 系統說明</h2>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; line-height: 1.8; color: #555;">
+                <div>
+                    <h3 style="color: #333; margin-bottom: 10px;">🎯 快速開始</h3>
+                    <p>1️⃣ 點擊「添加筆記」按鈕</p>
+                    <p>2️⃣ 選擇筆記類別和內容</p>
+                    <p>3️⃣ 系統每 30 分鐘自動壓縮</p>
+                    <p>4️⃣ 定期檢查反思歷史</p>
+                </div>
+                <div>
+                    <h3 style="color: #333; margin-bottom: 10px;">📌 筆記類別</h3>
+                    <p><strong>發現</strong>：新的想法和洞察</p>
+                    <p><strong>錯誤</strong>：問題與解決方案</p>
+                    <p><strong>記憶</strong>：知識更新</p>
+                    <p><strong>神經</strong>：狀態變化</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // API 基礎路徑（若使用後端）
+        const API_BASE = '/api/soul-note';
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            loadStats();
+        });
+
+        // 顯示/隱藏區段
+        function showSection(section) {
+            document.getElementById('add-section').style.display = section === 'add' ? 'block' : 'none';
+            document.getElementById('view-section').style.display = section === 'view' ? 'block' : 'none';
+
+            if (section === 'view') {
+                refreshNotes();
+            }
+        }
+
+        // 添加筆記
+        async function addNote() {
+            const content = document.getElementById('note-content').value.trim();
+            const category = document.querySelector('input[name="category"]:checked').value;
+            const tagsStr = document.getElementById('note-tags').value.trim();
+            const tags = tagsStr ? tagsStr.split(',').map(t => t.trim()) : [];
+
+            if (!content) {
+                showStatus('❌ 內容不能為空', 'error');
+                return;
+            }
+
+            try {
+                showStatus('添加中...', 'info');
+
+                // 使用命令行方式添加
+                const cmd = `python scripts/soul_note_skill.py add "${content}" --category ${category}${tags.length ? ' --tags ' + tags.join(',') : ''}`;
+
+                // 若有後端，使用 API；否則顯示命令
+                const response = await fetch(API_BASE + '/add', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ content, category, tags })
+                }).catch(() => null);
+
+                if (response?.ok) {
+                    showStatus('✅ 筆記已添加！', 'success');
+                    document.getElementById('note-content').value = '';
+                    document.getElementById('note-tags').value = '';
+                    loadStats();
+                } else {
+                    showStatus(`✅ 已複製命令到剪貼板:\n${cmd}`, 'success');
+                    navigator.clipboard.writeText(cmd);
+                }
+            } catch (e) {
+                showStatus('❌ 添加失敗: ' + e.message, 'error');
+            }
+        }
+
+        // 刷新筆記列表
+        async function refreshNotes() {
+            const filterType = document.getElementById('filter-type').value;
+
+            try {
+                const container = document.getElementById('notes-container');
+                container.innerHTML = '<div class="loading" style="text-align:center;"></div> 載入中...';
+
+                const response = await fetch(API_BASE + '/list?filter=' + filterType).catch(() => null);
+
+                if (response?.ok) {
+                    const data = await response.json();
+                    displayNotes(data.notes, container);
+                } else {
+                    // 本地載入（演示模式）
+                    displayNotes([], container, true);
+                }
+            } catch (e) {
+                showStatus('❌ 載入失敗: ' + e.message, 'error');
+            }
+        }
+
+        // 顯示筆記
+        function displayNotes(notes, container, isDemo = false) {
+            if (notes.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📝</div>
+                        <p>暫無筆記</p>
+                        ${isDemo ? '<p style="font-size: 0.9em; color: #ccc;">使用 CLI 命令添加筆記：<br>python scripts/soul_note_skill.py add "内容"</p>' : ''}
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = notes.map(note => `
+                <div class="note-item">
+                    <div class="note-time">⏰ ${note.timestamp || '新筆記'}</div>
+                    <div>
+                        <span class="note-category category-${note.category || 'reflection'}">
+                            ${getCategoryEmoji(note.category)} ${getCategoryName(note.category)}
+                        </span>
+                    </div>
+                    <div class="note-content">${note.content || note}</div>
+                    <div class="note-tags">
+                        ${note.tags ? note.tags.map(tag => `<span class="tag">#${tag}</span>`).join('') : ''}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // 壓縮筆記
+        async function compressNotes() {
+            if (!confirm('確認壓縮今日筆記為反思？')) return;
+
+            try {
+                showStatus('壓縮中...', 'info');
+
+                const response = await fetch(API_BASE + '/compress', {
+                    method: 'POST'
+                }).catch(() => null);
+
+                if (response?.ok) {
+                    showStatus('✅ 壓縮完成！', 'success');
+                    loadStats();
+                } else {
+                    showStatus('✅ 已複製命令，請在終端執行:', 'success');
+                    navigator.clipboard.writeText('python scripts/soul_note_skill.py compress');
+                }
+            } catch (e) {
+                showStatus('❌ 壓縮失敗: ' + e.message, 'error');
+            }
+        }
+
+        // 查看反思歷史
+        async function listReflections() {
+            try {
+                showStatus('載入反思歷史...', 'info');
+
+                const response = await fetch(API_BASE + '/reflections').catch(() => null);
+
+                if (response?.ok) {
+                    const data = await response.json();
+                    alert(`最近反思:\n\n${data.reflections.slice(-5).map(r =>
+                        `📅 ${r.date} (v${r.version})\n${r.categories.join(', ')}\n筆記: ${r.note_count}條\n`
+                    ).join('\n')}`);
+                } else {
+                    showStatus('✅ 已複製命令，請在終端執行:', 'success');
+                    navigator.clipboard.writeText('python scripts/soul_note_skill.py list');
+                }
+            } catch (e) {
+                showStatus('❌ 載入失敗: ' + e.message, 'error');
+            }
+        }
+
+        // 導出筆記
+        async function exportNotes() {
+            try {
+                const response = await fetch(API_BASE + '/export').catch(() => null);
+
+                if (response?.ok) {
+                    const data = await response.json();
+                    const blob = new Blob([data.content], { type: 'text/markdown' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `soul_notes_${new Date().toISOString().split('T')[0]}.md`;
+                    a.click();
+                    showStatus('✅ 導出成功！', 'success');
+                } else {
+                    showStatus('✅ 已複製命令，請在終端執行:', 'success');
+                    navigator.clipboard.writeText('python scripts/soul_note_skill.py export --save soul_export.md');
+                }
+            } catch (e) {
+                showStatus('❌ 導出失敗: ' + e.message, 'error');
+            }
+        }
+
+        // 載入統計信息
+        async function loadStats() {
+            try {
+                const response = await fetch(API_BASE + '/stats').catch(() => null);
+
+                if (response?.ok) {
+                    const stats = await response.json();
+                    document.getElementById('total-notes').textContent = stats.total_notes || 0;
+                    document.getElementById('today-notes').textContent = stats.today_notes || 0;
+                    document.getElementById('total-reflections').textContent = stats.reflections || 0;
+                }
+            } catch (e) {
+                console.log('統計載入失敗，使用本地值');
+            }
+        }
+
+        // 顯示狀態消息
+        function showStatus(message, type) {
+            const statusEl = document.getElementById('status');
+            statusEl.textContent = message;
+            statusEl.className = `status show status-${type}`;
+
+            if (type === 'success') {
+                setTimeout(() => statusEl.classList.remove('show'), 3000);
+            }
+        }
+
+        // 幫助函數
+        function getCategoryEmoji(cat) {
+            const emojis = {
+                'discovery': '🔍',
+                'error': '❌',
+                'memory_update': '💾',
+                'neurochemistry': '🧠',
+                'reflection': '💭'
+            };
+            return emojis[cat] || '📝';
+        }
+
+        function getCategoryName(cat) {
+            const names = {
+                'discovery': '發現',
+                'error': '錯誤',
+                'memory_update': '記憶',
+                'neurochemistry': '神經',
+                'reflection': '反思'
+            };
+            return names[cat] || '筆記';
+        }
+
+        // 按 Enter 鍵提交
+        document.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter' && e.ctrlKey) {
+                const activeSection = document.getElementById('add-section').style.display !== 'none' ? 'add' : 'view';
+                if (activeSection === 'add') addNote();
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "Soul Note Web Panel",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-u", "scripts/soul_note_api.py", "--debug"],
+      "port": 5000,
+      "description": "Soul Note 網頁面板與 API 服務",
+      "env": {
+        "PYTHONIOENCODING": "utf-8",
+        "PYTHONUNBUFFERED": "1"
+      }
+    }
+  ]
+}

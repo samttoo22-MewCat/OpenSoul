@@ -1,0 +1,55 @@
+@startuml openSOUL_neurochemstate
+!theme plain
+skinparam defaultFontName "Noto Sans CJK TC"
+skinparam backgroundColor #FAFAFA
+skinparam stateBackgroundColor #FEFEFE
+skinparam stateBorderColor #AAAAAA
+
+title openSOUL — 神經化學狀態機（DA / 5-HT）
+
+[*] --> Balanced : 系統啟動\nDA = 0.5, 5-HT = 0.5
+
+state Balanced #E3F2FD {
+  note : 正常檢索模式\n中等廣度 BFS\n標準驗證閾值 (0.6)
+}
+
+state HighDopamine #E8F5E9 {
+  note : 快速學習模式\n積極強化當前路徑\n提高 RELATES_TO 邊緣權重\n學習率 → 最高
+}
+
+state HighSerotonin #FFF8E1 {
+  note : 謹慎決策模式\n廣度優先搜尋 (BFS)\n嚴格事實驗證閾值 ↑\n放慢回覆速度
+}
+
+state Excited #F3E5F5 {
+  note : 高 DA + 低 5-HT\n積極探索新連結\n高創造力（風險較高）\n頓悟機率 ↑
+}
+
+state Cautious #FBE9E7 {
+  note : 低 DA + 高 5-HT\n保守策略\n只信任高信心路徑\n拒絕不確定答案
+}
+
+Balanced --> HighDopamine : 任務成功\n使用者正向回饋 👍
+Balanced --> HighSerotonin : 偵測到不確定性\n或模糊指令
+
+HighDopamine --> Balanced : 自然衰減（60 分鐘）
+HighSerotonin --> Balanced : 成功解決不確定性
+
+HighDopamine --> Excited : 連續多次成功\nDA > 0.85
+HighSerotonin --> Cautious : 基底核驗證連續失敗
+
+Excited --> HighDopamine : 遇到錯誤\n基底核觸發抑制
+Cautious --> Balanced : Dream Cycle 完成\n狀態正規化
+
+Balanced --> Balanced : Dream Cycle 完成\n定期重置至 (0.5, 0.5)
+
+note as N1
+  DA（多巴胺）高 → 學習率 ↑, 探索 ↑, 邊緣權重增幅 ↑
+  5-HT（血清素）高 → 驗證閾值 ↑, BFS 廣度 ↑, 決策放慢
+
+  SOUL.md frontmatter 動態反映當前狀態：
+  dopamine_level: 0.x
+  serotonin_level: 0.x
+end note
+
+@enduml

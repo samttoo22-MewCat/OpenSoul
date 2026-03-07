@@ -1,0 +1,50 @@
+# Git 版本控制（最大的问题！）
+.git/
+.gitignore
+.gitattributes
+.github/
+
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.coverage
+
+# Node（如果有）
+node_modules/
+npm-debug.log
+.pnpm-store/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime-*
+.DS_Store
+
+# 临时文件
+.env.local
+.env.*.local
+._*
+.cache/
+*.tmp
+*.log
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# 其他
+LICENSE
+CONTRIBUTING.md
+.mailmap
+.pre-commit-config.yaml
+# 注意：不要排除 README.md，Dockerfile 需要它！

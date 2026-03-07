@@ -1,0 +1,42 @@
++-----------------------------------------------------------------------------+
+| openSOUL 環境設定                                                           |
++-----------------------------------------------------------------------------+
+  作業系統    Windows      
+  CPU 架構    amd64        
+  Python      3.13.2       
+  專案路徑    E:\openSOUL  
+Traceback (most recent call last):
+  File "E:\openSOUL\scripts\setup_env.py", line 651, in <module>
+    main()
+    ~~~~^^
+  File "E:\openSOUL\scripts\setup_env.py", line 629, in main
+    info("偵測 Docker…")
+    ~~~~^^^^^^^^^^^^^^^^
+  File "E:\openSOUL\scripts\setup_env.py", line 67, in info
+    console.print(f"[bold cyan]\u2139[/bold cyan]  {msg}")
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\v99sa\miniconda3\Lib\site-packages\rich\console.py", line 1678, in print
+    with self:
+         ^^^^
+  File "C:\Users\v99sa\miniconda3\Lib\site-packages\rich\console.py", line 864, in __exit__
+    self._exit_buffer()
+    ~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\v99sa\miniconda3\Lib\site-packages\rich\console.py", line 822, in _exit_buffer
+    self._check_buffer()
+    ~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\v99sa\miniconda3\Lib\site-packages\rich\console.py", line 2019, in _check_buffer
+    self._write_buffer()
+    ~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\v99sa\miniconda3\Lib\site-packages\rich\console.py", line 2055, in _write_buffer
+    legacy_windows_render(buffer, LegacyWindowsTerm(self.file))
+    ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\v99sa\miniconda3\Lib\site-packages\rich\_windows_renderer.py", line 17, in legacy_windows_render
+    term.write_styled(text, style)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "C:\Users\v99sa\miniconda3\Lib\site-packages\rich\_win32_console.py", line 441, in write_styled
+    self.write_text(text)
+    ~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Users\v99sa\miniconda3\Lib\site-packages\rich\_win32_console.py", line 402, in write_text
+    self.write(text)
+    ~~~~~~~~~~^^^^^^
+UnicodeEncodeError: 'cp950' codec can't encode character '\u2139' in position 0: illegal multibyte sequence

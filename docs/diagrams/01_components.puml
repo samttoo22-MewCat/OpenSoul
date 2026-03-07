@@ -1,0 +1,96 @@
+@startuml openSOUL_components
+!theme plain
+skinparam linetype ortho
+skinparam defaultFontName "Noto Sans CJK TC"
+skinparam componentStyle rectangle
+skinparam backgroundColor #FAFAFA
+skinparam packageBackgroundColor #F5F5F5
+
+title openSOUL — 系統元件總覽
+
+package "Interface Layer\n介面層" #E8F4F8 {
+  [CLI\n(Typer + Rich)\ninterface/cli.py] as CLI
+  [REST API\n(FastAPI)\ninterface/api.py] as API
+}
+
+package "Frontal Lobe 前額葉\ncore/" #DDEEFF {
+  [CognitiveAgent\ncore/agent.py] as Agent
+  [Session Manager\ncore/session.py] as Session
+  [Identity Loader\nidentity/soul.py] as Identity
+}
+
+package "Hippocampus 海馬迴\nmemory/" #DDFFDD {
+  [SemanticMemory\nmemory/semantic.py] as Semantic
+  [EpisodicMemory\nmemory/episodic.py] as Episodic
+  [ProceduralMemory\nmemory/procedural.py] as Procedural
+  [EcphoryRetrieval\nmemory/retrieval.py] as Retrieval
+}
+
+package "Amygdala 杏仁核\naffect/" #FFFFCC {
+  [NeurochemState\naffect/neurochem.py] as Neurochem
+  [SalienceEvaluator\naffect/salience.py] as Salience
+}
+
+package "Basal Ganglia + Thalamus 基底核+視丘\ngating/" #FFE0DD {
+  [ProceduralVerifier\ngating/verifier.py] as Verifier
+  [ThalamicInhibitor\ngating/inhibitor.py] as Inhibitor
+}
+
+package "Default Mode Network 預設模式網路\ndream/" #EDE7F6 {
+  [DreamEngine\ndream/engine.py] as Dream
+  [LiDER Replay\ndream/replay.py] as Replay
+  [KnowledgeDistillation\ndream/distillation.py] as Distill
+  [GraphPruning\ndream/pruning.py] as Prune
+}
+
+database "FalkorDB\n(Docker :6379)" #FFF3E0 {
+  [soul_semantic\n語意記憶圖譜] as G_Semantic
+  [soul_episodic\n情節記憶圖譜] as G_Episodic
+  [soul_procedural\n程序性記憶圖譜] as G_Procedural
+}
+
+folder "workspace/" #F5F5F5 {
+  [SOUL.md\n人格+神經化學] as SoulMD
+  [MEMORY.md\n精選知識] as MemMD
+  [memory/YYYY-MM-DD.md\n每日日誌] as DailyLog
+}
+
+CLI --> Agent
+API --> Agent
+Agent --> Identity
+Identity --> SoulMD
+Agent --> Session
+Session --> DailyLog
+
+Agent --> Retrieval
+Agent --> Neurochem
+Agent --> Verifier
+
+Retrieval --> G_Semantic
+Retrieval --> G_Episodic
+Retrieval --> G_Procedural
+
+Semantic --> G_Semantic
+Episodic --> G_Episodic
+Procedural --> G_Procedural
+
+Verifier --> G_Semantic
+Verifier --> G_Procedural
+Verifier --> Inhibitor
+Inhibitor --> Agent
+
+Salience --> Neurochem
+Neurochem --> Retrieval
+
+Dream --> Replay
+Dream --> Distill
+Dream --> Prune
+Replay --> G_Episodic
+Replay --> G_Procedural
+Distill --> G_Episodic
+Distill --> G_Semantic
+Prune --> G_Semantic
+Prune --> G_Episodic
+Prune --> G_Procedural
+
+@enduml

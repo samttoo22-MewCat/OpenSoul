@@ -1,0 +1,1994 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>openSOUL — 仿人類心智認知 AI</title>
+  <style>
+    /* ── Reset & Base ──────────────────────────────────────────────────────────── */
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --bg: #0b0d12;
+      --panel: #111520;
+      --panel-alt: #0e1018;
+      --border: #1e2236;
+      --text: #c8d0e0;
+      --text-muted: #5a6378;
+      --text-dim: #8892a4;
+      --accent: #5b8cf7;
+      --da: #e0933a;
+      /* dopamine – amber */
+      --ht: #5b9cf6;
+      /* serotonin – blue */
+      --pass: #2ea04426;
+      --pass-text: #3fb950;
+      --revise: #bb8a0026;
+      --revise-text: #e3b341;
+      --suppress: #cf222e26;
+      --suppress-text: #f85149;
+      --user-bg: #1a2540;
+      --ass-bg: #131823;
+      --radius: 10px;
+      --radius-sm: 6px;
+    }
+
+    html,
+    body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'SF Pro Display', 'PingFang TC', 'Helvetica Neue', system-ui, sans-serif;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    /* ── Layout ───────────────────────────────────────────────────────────────── */
+    #app {
+      display: grid;
+      grid-template-rows: 52px 1fr;
+      grid-template-columns: 1fr 300px;
+      height: 100vh;
+      gap: 0;
+    }
+
+    /* ── Header ───────────────────────────────────────────────────────────────── */
+    #header {
+      grid-column: 1 / 3;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 0 20px;
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+      z-index: 10;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 700;
+      font-size: 16px;
+      letter-spacing: -0.3px;
+      color: #fff;
+    }
+
+    .logo svg {
+      opacity: .9;
+    }
+
+    #agent-name {
+      font-size: 13px;
+      color: var(--text-dim);
+      padding-left: 14px;
+      border-left: 1px solid var(--border);
+    }
+
+    #conn-status {
+      margin-left: auto;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--text-muted);
+    }
+
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #333;
+    }
+
+    .dot.ok {
+      background: var(--pass-text);
+      box-shadow: 0 0 6px var(--pass-text);
+    }
+
+    .dot.err {
+      background: var(--suppress-text);
+    }
+
+    .dot.loading {
+      background: var(--da);
+      animation: pulse 1s infinite;
+    }
+
+    @keyframes pulse {
+
+      0%,
+      100% {
+        opacity: 1
+      }
+
+      50% {
+        opacity: .4
+      }
+    }
+
+    .hdr-btn {
+      background: var(--panel-alt);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 5px 13px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      font-size: 12px;
+      transition: all .15s;
+    }
+
+    .hdr-btn:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .hdr-btn.danger:hover {
+      border-color: var(--suppress-text);
+      color: var(--suppress-text);
+    }
+
+    /* ── Chat Area ────────────────────────────────────────────────────────────── */
+    #chat-col {
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid var(--border);
+      overflow: hidden;
+    }
+
+    #messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px 20px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+    }
+
+    .msg {
+      display: flex;
+      gap: 10px;
+      animation: fadein .2s ease;
+    }
+
+    @keyframes fadein {
+      from {
+        opacity: 0;
+        transform: translateY(6px)
+      }
+
+      to {
+        opacity: 1;
+        transform: none
+      }
+    }
+
+    .msg-avatar {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+
+    .msg.user .msg-avatar {
+      background: #1e3a6e;
+    }
+
+    .msg.agent .msg-avatar {
+      background: #1e2a4e;
+    }
+
+    .msg-body {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .msg-meta {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .msg-text {
+      padding: 10px 14px;
+      border-radius: var(--radius);
+      line-height: 1.65;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-size: 13.5px;
+    }
+
+    .msg.user .msg-text {
+      background: var(--user-bg);
+      border: 1px solid #1e3358;
+    }
+
+    .msg.agent .msg-text {
+      background: var(--ass-bg);
+      border: 1px solid var(--border);
+    }
+
+    .msg-badges {
+      display: flex;
+      gap: 6px;
+      margin-top: 6px;
+      flex-wrap: wrap;
+    }
+
+    .badge {
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: 20px;
+      font-weight: 600;
+      letter-spacing: .4px;
+      text-transform: uppercase;
+    }
+
+    .badge-pass {
+      background: var(--pass);
+      color: var(--pass-text);
+    }
+
+    .badge-revise {
+      background: var(--revise);
+      color: var(--revise-text);
+    }
+
+    .badge-suppress {
+      background: var(--suppress);
+      color: var(--suppress-text);
+    }
+
+    .badge-mem {
+      background: #1a2236;
+      color: var(--text-dim);
+    }
+
+    .badge-tool {
+      background: #2a3a60;
+      color: #94b8ff;
+      border: 1px solid #3d5a99;
+    }
+
+    .badge-none {
+      background: #1a1f2e;
+      color: #5a6378;
+    }
+
+    /* Thinking indicator */
+    .thinking .msg-text {
+      display: flex;
+      gap: 5px;
+      align-items: center;
+      color: var(--text-muted);
+    }
+
+    .dot-anim span {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--text-muted);
+      display: inline-block;
+      animation: bounce .9s infinite;
+    }
+
+    .dot-anim span:nth-child(2) {
+      animation-delay: .15s
+    }
+
+    .dot-anim span:nth-child(3) {
+      animation-delay: .3s
+    }
+
+    @keyframes bounce {
+
+      0%,
+      60%,
+      100% {
+        transform: translateY(0)
+      }
+
+      30% {
+        transform: translateY(-5px)
+      }
+    }
+
+    /* ── Input Bar ────────────────────────────────────────────────────────────── */
+    #input-bar {
+      padding: 12px 16px;
+      border-top: 1px solid var(--border);
+      background: var(--panel-alt);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    #input-row {
+      display: flex;
+      gap: 8px;
+      align-items: flex-end;
+    }
+
+    #user-input {
+      flex: 1;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: var(--radius-sm);
+      padding: 9px 12px;
+      font-size: 13.5px;
+      font-family: inherit;
+      resize: none;
+      min-height: 40px;
+      max-height: 120px;
+      outline: none;
+      transition: border-color .15s;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+    }
+
+    #user-input:focus {
+      border-color: var(--accent);
+    }
+
+    #user-input::placeholder {
+      color: var(--text-muted);
+    }
+
+    #send-btn {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: var(--radius-sm);
+      padding: 9px 16px;
+      font-size: 13px;
+      cursor: pointer;
+      font-family: inherit;
+      font-weight: 600;
+      white-space: nowrap;
+      transition: opacity .15s;
+    }
+
+    #send-btn:disabled {
+      opacity: .5;
+      cursor: not-allowed;
+    }
+
+    #send-btn:not(:disabled):hover {
+      opacity: .85;
+    }
+
+    /* ── Right Panel ──────────────────────────────────────────────────────────── */
+    #side-panel {
+      overflow-y: auto;
+      padding: 16px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+    }
+
+    .panel-card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px 14px;
+    }
+
+    .panel-title {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+    }
+
+    /* Neurochem bars */
+    .neuro-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .neuro-label {
+      font-size: 11px;
+      color: var(--text-dim);
+      width: 42px;
+      flex-shrink: 0;
+    }
+
+    .bar-track {
+      flex: 1;
+      height: 6px;
+      background: #1a1f2e;
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    .bar-fill {
+      height: 100%;
+      border-radius: 3px;
+      transition: width .5s ease;
+    }
+
+    .bar-fill.da {
+      background: var(--da);
+    }
+
+    .bar-fill.ht {
+      background: var(--ht);
+    }
+
+    .neuro-val {
+      font-size: 11px;
+      color: var(--text-dim);
+      width: 30px;
+      text-align: right;
+    }
+
+    .mode-pill {
+      margin-top: 10px;
+      text-align: center;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      padding: 4px 0;
+      border-radius: 20px;
+      background: #1a1f2e;
+      color: var(--accent);
+      transition: background .3s, color .3s;
+    }
+
+    /* Gating */
+    .gating-action-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .gating-icon {
+      font-size: 16px;
+    }
+
+    .gating-label {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: .5px;
+    }
+
+    .gating-score-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .gating-score-label {
+      font-size: 11px;
+      color: var(--text-muted);
+      width: 32px;
+    }
+
+    .gating-score-val {
+      font-size: 11px;
+      color: var(--text-dim);
+      width: 30px;
+      text-align: right;
+    }
+
+    .bar-fill.gating {
+      background: var(--accent);
+    }
+
+    /* Memory */
+    .mem-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 6px;
+    }
+
+    .mem-card {
+      background: var(--panel-alt);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 8px 6px;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .mem-label {
+      font-size: 10px;
+      color: var(--text-muted);
+    }
+
+    .mem-count {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--accent);
+    }
+
+    /* Judge */
+    .judge-reason {
+      font-size: 11px;
+      color: var(--text-dim);
+      background: var(--panel-alt);
+      padding: 8px;
+      border-radius: var(--radius-sm);
+      margin-top: 6px;
+      line-height: 1.4;
+      border-left: 3px solid var(--accent);
+    }
+
+    /* Session */
+    .session-id {
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 10px;
+      color: var(--text-muted);
+      word-break: break-all;
+      line-height: 1.5;
+    }
+
+    .session-turns {
+      margin-top: 6px;
+      font-size: 11px;
+      color: var(--text-dim);
+    }
+
+    /* Dream result */
+    #dream-result {
+      font-size: 11px;
+      color: var(--text-dim);
+      background: var(--panel-alt);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 8px 10px;
+      margin-top: 8px;
+      white-space: pre-wrap;
+      word-break: break-all;
+      display: none;
+    }
+
+    /* System log */
+    #sys-log {
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 10px;
+      color: var(--text-muted);
+      background: var(--panel-alt);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 8px 10px;
+      max-height: 90px;
+      overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+      line-height: 1.6;
+    }
+
+    .log-ok {
+      color: var(--pass-text);
+    }
+
+    .log-warn {
+      color: var(--revise-text);
+    }
+
+    .log-err {
+      color: var(--suppress-text);
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar {
+      width: 5px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 3px;
+    }
+
+    /* ── Modal ─────────────────────────────────────────────────────────────────── */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      background: rgba(0, 0, 0, .78);
+      backdrop-filter: blur(4px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal-overlay.open {
+      display: flex;
+    }
+
+    .modal-box {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      width: 90vw;
+      max-width: 860px;
+      max-height: 85vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel-alt);
+      flex-shrink: 0;
+    }
+
+    .modal-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #fff;
+      letter-spacing: -.2px;
+    }
+
+    .modal-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .modal-btn {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 5px 14px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      font-size: 12px;
+      font-family: inherit;
+      transition: all .15s;
+    }
+
+    .modal-btn:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .modal-btn.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+      font-weight: 600;
+    }
+
+    .modal-btn.primary:hover {
+      opacity: .85;
+      color: #fff;
+    }
+
+    .modal-btn:disabled {
+      opacity: .4;
+      cursor: not-allowed;
+    }
+
+    .modal-body {
+      flex: 1;
+      overflow: auto;
+      padding: 16px 18px;
+    }
+
+    /* Soul editor textarea */
+    #soul-textarea {
+      width: 100%;
+      height: 100%;
+      min-height: 400px;
+      background: var(--panel-alt);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: var(--radius-sm);
+      padding: 12px 14px;
+      font-size: 12.5px;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      line-height: 1.65;
+      resize: vertical;
+      outline: none;
+      transition: border-color .15s;
+    }
+
+    #soul-textarea:focus {
+      border-color: var(--accent);
+    }
+
+    .soul-status {
+      margin-top: 8px;
+      font-size: 11px;
+      min-height: 18px;
+    }
+
+    /* DB viewer */
+    .db-tabs {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+
+    .db-tab {
+      background: var(--panel-alt);
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      padding: 5px 14px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      font-size: 12px;
+      font-family: inherit;
+      transition: all .15s;
+    }
+
+    .db-tab.active {
+      background: #1a2040;
+      border-color: var(--accent);
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .db-tab:hover:not(.active) {
+      border-color: var(--text-dim);
+      color: var(--text);
+    }
+
+    .db-stats-bar {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+
+    .db-stat-chip {
+      background: var(--panel-alt);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 4px 12px;
+      font-size: 11px;
+      color: var(--text-dim);
+    }
+
+    .db-stat-chip strong {
+      color: var(--accent);
+      font-weight: 700;
+    }
+
+    #db-json-pre {
+      background: var(--panel-alt);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 12px 14px;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 11px;
+      line-height: 1.6;
+      color: var(--text);
+      white-space: pre;
+      overflow: auto;
+      max-height: 420px;
+    }
+
+    /* ── Debug Log Modal ───────────────────────────────────────────────────────── */
+    .log-toolbar {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 10px;
+      flex-wrap: wrap;
+    }
+
+    .log-filter-btn {
+      background: var(--panel-alt);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      padding: 3px 10px;
+      border-radius: 20px;
+      cursor: pointer;
+      font-size: 11px;
+      font-family: inherit;
+      transition: all .15s;
+    }
+
+    .log-filter-btn.active {
+      font-weight: 700;
+    }
+
+    .log-filter-btn[data-level=""] {
+      border-color: var(--text-dim);
+      color: var(--text-dim);
+    }
+
+    .log-filter-btn[data-level=""].active {
+      border-color: var(--text);
+      color: var(--text);
+    }
+
+    .log-filter-btn[data-level="DEBUG"] {}
+
+    .log-filter-btn[data-level="DEBUG"].active {
+      border-color: var(--text-dim);
+      color: var(--text-dim);
+    }
+
+    .log-filter-btn[data-level="INFO"].active {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .log-filter-btn[data-level="WARNING"].active {
+      border-color: var(--revise-text);
+      color: var(--revise-text);
+    }
+
+    .log-filter-btn[data-level="ERROR"].active {
+      border-color: var(--suppress-text);
+      color: var(--suppress-text);
+    }
+
+    .log-auto-label {
+      margin-left: auto;
+      font-size: 11px;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    #log-entries {
+      background: var(--panel-alt);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 8px 10px;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 11px;
+      line-height: 1.7;
+      overflow-y: auto;
+      max-height: 460px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+    }
+
+    .log-row {
+      display: flex;
+      gap: 8px;
+    }
+
+    .log-row-ts {
+      color: var(--text-muted);
+      flex-shrink: 0;
+    }
+
+    .log-row-lvl {
+      width: 52px;
+      flex-shrink: 0;
+      font-weight: 700;
+    }
+
+    .log-row-name {
+      color: var(--text-muted);
+      flex-shrink: 0;
+      max-width: 160px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .log-row-msg {
+      color: var(--text);
+      word-break: break-all;
+    }
+
+    .log-row.lv-debug .log-row-lvl {
+      color: var(--text-muted);
+    }
+
+    .log-row.lv-info .log-row-lvl {
+      color: var(--accent);
+    }
+
+    .log-row.lv-warning .log-row-lvl {
+      color: var(--revise-text);
+    }
+
+    .log-row.lv-error .log-row-lvl,
+    .log-row.lv-critical .log-row-lvl {
+      color: var(--suppress-text);
+    }
+
+    .log-row.lv-warning .log-row-msg {
+      color: var(--revise-text);
+    }
+
+    .log-row.lv-error .log-row-msg,
+    .log-row.lv-critical .log-row-msg {
+      color: var(--suppress-text);
+    }
+  </style>
+</head>
+
+<body>
+  <div id="app">
+
+    <!-- ── Header ── -->
+    <header id="header">
+      <div class="logo">
+        <!-- brain icon -->
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5b8cf7" stroke-width="1.6"
+          stroke-linecap="round" stroke-linejoin="round">
+          <path
+            d="M9.5 2C8 2 6 3 6 5.5c-2 0-4 1.5-4 4S3.5 13 5 13.5V17c0 2 1.5 3 3 3h8c1.5 0 3-1 3-3v-3.5C20.5 13 22 11.5 22 9.5S20 5.5 18 5.5C18 3 16 2 14.5 2" />
+          <path d="M6 12h12M9 7v2M15 7v2" />
+        </svg>
+        openSOUL
+      </div>
+      <span id="agent-name">–</span>
+      <div id="conn-status" style="margin-left:auto">
+        <div class="dot loading" id="conn-dot"></div>
+        <span id="conn-text">連線中…</span>
+      </div>
+      <button class="hdr-btn" onclick="fetchStatus()">↺ 更新</button>
+      <button class="hdr-btn" onclick="openSoulEditor()">📝 SOUL</button>
+      <button class="hdr-btn" onclick="openDbViewer()">🗄 資料庫</button>
+      <button class="hdr-btn" onclick="openSoulNoteViewer()">📔 Soul Note</button>
+      <button class="hdr-btn" onclick="openLogViewer()">📋 Debug Log</button>
+      <button class="hdr-btn" id="reflect-btn" onclick="triggerReflect()">🧠 反思</button>
+      <button class="hdr-btn danger" id="dream-btn" onclick="triggerDream()">🌙 Dream</button>
+      <button class="hdr-btn danger" onclick="openResetModal()">🗑 重置</button>
+    </header>
+
+    <!-- ── Chat Column ── -->
+    <section id="chat-col">
+      <div id="messages">
+        <!-- Welcome -->
+        <div class="msg agent" id="welcome-msg">
+          <div class="msg-avatar">🧠</div>
+          <div class="msg-body">
+            <div class="msg-meta">ARIA <span>剛才</span></div>
+            <div class="msg-text">嗨！我是 ARIA，openSOUL 的認知代理。<br>
+              系統正在連接 FalkorDB 記憶圖譜，稍候即可開始對話。<br><br>
+              <code style="font-size:11px;color:var(--text-muted)">提示：Enter 發送，Shift+Enter 換行</code>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Input Bar -->
+      <div id="input-bar">
+        <div id="input-row">
+          <textarea id="user-input" rows="1" placeholder="輸入訊息… (Enter 發送 / Shift+Enter 換行)"></textarea>
+          <button id="send-btn" onclick="sendMessage()">發送 ↑</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Side Panel ── -->
+    <aside id="side-panel">
+
+      <!-- Neurochem -->
+      <div class="panel-card">
+        <div class="panel-title">🔬 神經化學狀態</div>
+        <div class="neuro-row">
+          <span class="neuro-label">多巴胺</span>
+          <div class="bar-track">
+            <div class="bar-fill da" id="da-bar" style="width:50%"></div>
+          </div>
+          <span class="neuro-val" id="da-val">0.50</span>
+        </div>
+        <div class="neuro-row">
+          <span class="neuro-label">血清素</span>
+          <div class="bar-track">
+            <div class="bar-fill ht" id="ht-bar" style="width:50%"></div>
+          </div>
+          <span class="neuro-val" id="ht-val">0.50</span>
+        </div>
+        <div class="mode-pill" id="neuro-mode">BALANCED</div>
+      </div>
+
+      <!-- Gating -->
+      <div class="panel-card">
+        <div class="panel-title">🔒 驗證閘門</div>
+        <div class="gating-action-row">
+          <span class="gating-icon" id="gating-icon">✅</span>
+          <span class="gating-label" id="gating-label" style="color:var(--pass-text)">PASS</span>
+        </div>
+        <div class="gating-score-row">
+          <span class="gating-score-label">Score</span>
+          <div class="bar-track">
+            <div class="bar-fill gating" id="gating-bar" style="width:100%"></div>
+          </div>
+          <span class="gating-score-val" id="gating-score">1.00</span>
+        </div>
+      </div>
+
+      <!-- Judge Panel -->
+      <div class="panel-card">
+        <div class="panel-title">🧠 腦部決策 (Judge)</div>
+        <div class="gating-action-row">
+          <span id="judge-tool-icon" class="gating-icon">🔍</span>
+          <span id="judge-tool-name" class="gating-label">無需工具</span>
+        </div>
+        <div class="gating-score-row">
+          <span class="gating-score-label">信心度</span>
+          <div class="bar-track">
+            <div id="judge-conf-bar" class="bar-fill gating" style="width:0%"></div>
+          </div>
+          <span id="judge-conf-val" class="gating-score-val">0%</span>
+        </div>
+        <div id="judge-reasoning" class="judge-reason">等待分析中...</div>
+      </div>
+
+      <!-- Memory Hits -->
+      <div class="panel-card">
+        <div class="panel-title">💡 記憶觸發</div>
+        <div class="mem-grid">
+          <div class="mem-card">
+            <span class="mem-label">語意</span>
+            <span class="mem-count" id="mem-concepts">0</span>
+          </div>
+          <div class="mem-card">
+            <span class="mem-label">情節</span>
+            <span class="mem-count" id="mem-episodes">0</span>
+          </div>
+          <div class="mem-card">
+            <span class="mem-label">程序</span>
+            <span class="mem-count" id="mem-procedures">0</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Session -->
+      <div class="panel-card">
+        <div class="panel-title">🔑 Session</div>
+        <div class="session-id" id="session-id">（尚未開始對話）</div>
+        <div class="session-turns" id="session-turns"></div>
+      </div>
+
+      <!-- Dream -->
+      <div class="panel-card">
+        <div class="panel-title">🌙 Dream Engine</div>
+        <div id="dream-idle" style="font-size:11px;color:var(--text-muted)">– 閒置時間未知</div>
+        <div id="dream-result"></div>
+      </div>
+
+      <!-- Sys Log -->
+      <div class="panel-card">
+        <div class="panel-title">📋 系統日誌</div>
+        <div id="sys-log"><span class="log-warn">等待連線…</span></div>
+      </div>
+
+    </aside>
+  </div>
+
+  <!-- ── SOUL 編輯器 Modal ── -->
+  <div class="modal-overlay" id="soul-modal" onclick="handleModalOverlayClick(event, 'soul-modal')">
+    <div class="modal-box">
+      <div class="modal-header">
+        <span class="modal-title">📝 SOUL.md 編輯器</span>
+        <div class="modal-actions">
+          <button class="modal-btn primary" id="soul-save-btn" onclick="saveSoul()">儲存</button>
+          <button class="modal-btn" onclick="closeModal('soul-modal')">取消</button>
+        </div>
+      </div>
+      <div class="modal-body">
+        <textarea id="soul-textarea" spellcheck="false" placeholder="載入中…"></textarea>
+        <div class="soul-status" id="soul-status"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 資料庫 JSON 檢視器 Modal ── -->
+  <div class="modal-overlay" id="db-modal" onclick="handleModalOverlayClick(event, 'db-modal')">
+    <div class="modal-box">
+      <div class="modal-header">
+        <span class="modal-title">🗄 資料庫 JSON 檢視器</span>
+        <div class="modal-actions">
+          <button class="modal-btn" onclick="refreshDbViewer()">↺ 重新整理</button>
+          <button class="modal-btn" onclick="closeModal('db-modal')">關閉</button>
+        </div>
+      </div>
+      <div class="modal-body">
+        <div class="db-stats-bar" id="db-stats-bar">
+          <span class="db-stat-chip">載入中…</span>
+        </div>
+        <div class="db-tabs">
+          <button class="db-tab active" id="dbtab-episodic" onclick="loadDbGraph('episodic')">情節 (Episodic)</button>
+          <button class="db-tab" id="dbtab-semantic" onclick="loadDbGraph('semantic')">語意 (Semantic)</button>
+          <button class="db-tab" id="dbtab-procedural" onclick="loadDbGraph('procedural')">程序 (Procedural)</button>
+        </div>
+        <pre id="db-json-pre">（尚未載入）</pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Debug Log Modal ── -->
+  <div class="modal-overlay" id="log-modal" onclick="handleModalOverlayClick(event, 'log-modal')">
+    <div class="modal-box" style="max-width:980px">
+      <div class="modal-header">
+        <span class="modal-title">📋 Debug Log（伺服器端）</span>
+        <div class="modal-actions">
+          <button class="modal-btn" onclick="refreshLogViewer()">↺ 重新整理</button>
+          <button class="modal-btn" onclick="closeModal('log-modal')">關閉</button>
+        </div>
+      </div>
+      <div class="modal-body">
+        <div class="log-toolbar">
+          <button class="log-filter-btn active" data-level="" onclick="setLogLevel('')">全部</button>
+          <button class="log-filter-btn" data-level="DEBUG" onclick="setLogLevel('DEBUG')">DEBUG</button>
+          <button class="log-filter-btn" data-level="INFO" onclick="setLogLevel('INFO')">INFO</button>
+          <button class="log-filter-btn" data-level="WARNING" onclick="setLogLevel('WARNING')">WARNING</button>
+          <button class="log-filter-btn" data-level="ERROR" onclick="setLogLevel('ERROR')">ERROR</button>
+          <span class="log-auto-label">
+            <span id="log-count" style="color:var(--text-muted)">0 筆</span>
+            · 自動刷新
+            <input type="checkbox" id="log-auto" checked onchange="toggleLogAuto(this.checked)"
+              style="accent-color:var(--accent)">
+          </span>
+        </div>
+        <div id="log-entries">（載入中…）</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Soul Note Modal ── -->
+  <div class="modal-overlay" id="soulnote-modal" onclick="handleModalOverlayClick(event, 'soulnote-modal')">
+    <div class="modal-box" style="max-width:980px">
+      <div class="modal-header">
+        <span class="modal-title">📔 Soul Note 檢視器</span>
+        <div class="modal-actions">
+          <button class="modal-btn" onclick="refreshSoulNoteViewer()">↺ 重新整理</button>
+          <button class="modal-btn" onclick="closeModal('soulnote-modal')">關閉</button>
+        </div>
+      </div>
+      <div class="modal-body" style="background:#000;">
+        <div class="db-tabs">
+          <button class="db-tab active" id="sntab-reflections" onclick="renderSoulNote('reflections')">每日反思</button>
+          <button class="db-tab" id="sntab-notes" onclick="renderSoulNote('notes')">短筆記 (未壓縮)</button>
+        </div>
+        <pre id="soulnote-json-pre"
+          style="white-space:pre-wrap; font-size:13px; margin:0; padding:12px; height:60vh; overflow:auto;">（尚未載入）</pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 選擇性重置 Modal ── -->
+  <div class="modal-overlay" id="reset-modal" onclick="handleModalOverlayClick(event, 'reset-modal')">
+    <div class="modal-box" style="max-width: 400px;">
+      <div class="modal-header">
+        <span class="modal-title">🗑 系統重置</span>
+        <div class="modal-actions">
+          <button class="modal-btn danger" onclick="confirmReset()">確認重置</button>
+          <button class="modal-btn" onclick="closeModal('reset-modal')">取消</button>
+        </div>
+      </div>
+      <div class="modal-body">
+        <p style="color:var(--text-muted); margin-bottom:12px; font-size:13px;">請選擇要清除的項目（此操作無法復原）：</p>
+        <div style="display:flex; flex-direction:column; gap:8px;">
+          <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+            <input type="checkbox" id="chk-reset-context" checked style="accent-color:var(--accent);"> 歷史上下文 (Sessions)
+          </label>
+          <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+            <input type="checkbox" id="chk-reset-db" checked style="accent-color:var(--accent);"> 記憶資料庫 (圖譜節點與邊)
+          </label>
+          <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+            <input type="checkbox" id="chk-reset-neuro" checked style="accent-color:var(--accent);"> 多巴胺與血清素狀態
+          </label>
+          <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+            <input type="checkbox" id="chk-reset-soul" checked style="accent-color:var(--danger);"> Soul Note (筆記與日反思)
+          </label>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /* ═══════════════════════════════════════════════════════════════════════════
+       openSOUL Web UI  —  Vanilla JS, no framework
+       ═══════════════════════════════════════════════════════════════════════════ */
+
+    const API = '';          // same origin
+    let sessionId = null;
+    let isLoading = false;
+    let turnCount = 0;
+    let agentName = 'ARIA';
+
+    /* ── Log ─────────────────────────────────────────────────────────────────── */
+    function log(msg, level = 'ok') {
+      const el = document.getElementById('sys-log');
+      const ts = new Date().toLocaleTimeString('zh-Hant', { hour12: false });
+      const span = document.createElement('span');
+      span.className = `log-${level}`;
+      span.textContent = `[${ts}] ${msg}\n`;
+      el.appendChild(span);
+      el.scrollTop = el.scrollHeight;
+      // keep last 60 lines
+      while (el.childNodes.length > 60) el.removeChild(el.firstChild);
+    }
+
+    /* ── Connection ──────────────────────────────────────────────────────────── */
+    async function checkHealth() {
+      const dot = document.getElementById('conn-dot');
+      const text = document.getElementById('conn-text');
+      dot.className = 'dot loading';
+      text.textContent = '連線中…';
+      try {
+        const r = await fetch(`${API}/health`);
+        if (r.ok) {
+          dot.className = 'dot ok';
+          text.textContent = '已連線';
+          log('後端連線成功 ✓');
+          await fetchStatus();
+        } else {
+          throw new Error(`HTTP ${r.status}`);
+        }
+      } catch (e) {
+        dot.className = 'dot err';
+        text.textContent = '連線失敗';
+        log(`連線失敗：${e.message}`, 'err');
+      }
+    }
+
+    /* ── Status ──────────────────────────────────────────────────────────────── */
+    async function fetchStatus() {
+      try {
+        const r = await fetch(`${API}/status`);
+        if (!r.ok) return;
+        const d = await r.json();
+        updateNeuroPanel(d.neurochem);
+        if (d.stats) {
+          updateMemPanel({
+            concepts: d.stats.semantic?.total_nodes ?? 0,
+            episodes: d.stats.episodic?.total_nodes ?? 0,
+            procedures: d.stats.procedural?.total_nodes ?? 0
+          });
+        }
+        if (d.agent?.name) {
+          agentName = d.agent.name;
+          document.getElementById('agent-name').textContent = `${d.agent.name}  v${d.agent.version ?? '0.1'}`;
+        }
+        if (d.dream_engine) {
+          const idle = d.dream_engine.idle_seconds ?? 0;
+          document.getElementById('dream-idle').textContent =
+            `閒置 ${idle.toFixed(0)}s / 閾值 ${d.dream_engine.idle_threshold_seconds}s`;
+        }
+      } catch (e) {
+        log(`status 更新失敗：${e.message}`, 'warn');
+      }
+    }
+
+    /* ── Neurochem Panel ─────────────────────────────────────────────────────── */
+    const MODE_COLORS = {
+      BALANCED: { color: '#5b8cf7', bg: '#1a2040' },
+      HIGH_DOPAMINE: { color: '#e0933a', bg: '#2a1a08' },
+      HIGH_SEROTONIN: { color: '#a370f7', bg: '#1e1030' },
+      EXCITED: { color: '#f78166', bg: '#2a1010' },
+      CAUTIOUS: { color: '#56d364', bg: '#0d2010' },
+    };
+
+    function updateNeuroPanel(nc) {
+      if (!nc) return;
+      const da = nc.dopamine ?? 0.5;
+      const ht = nc.serotonin ?? 0.5;
+      const mode = nc.mode ?? 'BALANCED';
+
+      document.getElementById('da-bar').style.width = `${(da * 100).toFixed(1)}%`;
+      document.getElementById('ht-bar').style.width = `${(ht * 100).toFixed(1)}%`;
+      document.getElementById('da-val').textContent = da.toFixed(2);
+      document.getElementById('ht-val').textContent = ht.toFixed(2);
+
+      const pill = document.getElementById('neuro-mode');
+      pill.textContent = mode;
+      const c = MODE_COLORS[mode] ?? MODE_COLORS.BALANCED;
+      pill.style.color = c.color;
+      pill.style.background = c.bg;
+    }
+
+    /* ── Gating Panel ────────────────────────────────────────────────────────── */
+    function updateGatingPanel(action, score, extra = null) {
+      const map = {
+        pass: { icon: '✅', color: 'var(--pass-text)', label: 'PASS' },
+        revise: { icon: '⚠️', color: 'var(--revise-text)', label: 'REVISE' },
+        suppress: { icon: '🚫', color: 'var(--suppress-text)', label: 'SUPPRESS' },
+      };
+      const cfg = map[action] || map.pass;
+      document.getElementById('gating-icon').textContent = cfg.icon;
+      document.getElementById('gating-label').textContent = cfg.label;
+      document.getElementById('gating-label').style.color = cfg.color;
+      document.getElementById('gating-bar').style.width = `${(score * 100).toFixed(1)}%`;
+      document.getElementById('gating-bar').style.background = cfg.color;
+      document.getElementById('gating-score').textContent = score.toFixed(2);
+
+      // Update Judge Panel if info exists
+      if (extra && extra.recommended_tool) {
+        const isNone = extra.recommended_tool === 'none';
+        document.getElementById('judge-tool-name').textContent = isNone ? '無需工具' : extra.recommended_tool;
+        document.getElementById('judge-tool-icon').textContent = isNone ? '🧠' : '🛠️';
+        document.getElementById('judge-conf-bar').style.width = (extra.judge_confidence * 100) + '%';
+        document.getElementById('judge-conf-val').textContent = (extra.judge_confidence * 100).toFixed(0) + '%';
+        document.getElementById('judge-reasoning').textContent = extra.judge_reasoning || (isNone ? '直接使用內建知識回答。' : '');
+      }
+    }
+
+    /* ── Memory Panel ─────────────────────────────────────────────────────────── */
+    function updateMemPanel(hits) {
+      if (!hits) return;
+      document.getElementById('mem-concepts').textContent = hits.concepts ?? 0;
+      document.getElementById('mem-episodes').textContent = hits.episodes ?? 0;
+      document.getElementById('mem-procedures').textContent = hits.procedures ?? 0;
+    }
+
+    /* ── Message Rendering ───────────────────────────────────────────────────── */
+    function timeStr() {
+      return new Date().toLocaleTimeString('zh-Hant', { hour: '2-digit', minute: '2-digit', hour12: false });
+    }
+
+    function appendMsg(role, text, extra = {}) {
+      const el = document.getElementById('messages');
+
+      const div = document.createElement('div');
+      div.className = `msg ${role}`;
+
+      const avatar = document.createElement('div');
+      avatar.className = 'msg-avatar';
+      avatar.textContent = role === 'user' ? '👤' : '🧠';
+
+      const body = document.createElement('div');
+      body.className = 'msg-body';
+
+      const meta = document.createElement('div');
+      meta.className = 'msg-meta';
+      meta.textContent = role === 'user' ? '你' : agentName;
+      const ts = document.createElement('span');
+      ts.textContent = timeStr();
+      meta.appendChild(ts);
+
+      const msgText = document.createElement('div');
+      msgText.className = 'msg-text';
+      msgText.textContent = text;
+
+      body.appendChild(meta);
+      body.appendChild(msgText);
+
+      if (role === 'agent' && extra.action) {
+        const badges = document.createElement('div');
+        badges.className = 'msg-badges';
+        const ab = document.createElement('span');
+        ab.className = `badge badge-${extra.action}`;
+        ab.textContent = extra.action.toUpperCase();
+        badges.appendChild(ab);
+        if (extra.score !== undefined) {
+          const sb = document.createElement('span');
+          sb.className = 'badge badge-mem';
+          sb.textContent = `score ${extra.score.toFixed(2)}`;
+          badges.appendChild(sb);
+        }
+        if (extra.memory_hits) {
+          const total = Object.values(extra.memory_hits).reduce((a, b) => a + b, 0);
+          if (total > 0) {
+            const mb = document.createElement('span');
+            mb.className = 'badge badge-mem';
+            mb.textContent = `記憶 ×${total}`;
+            badges.appendChild(mb);
+          }
+        }
+
+        // 🆕 顯示工具決策標籤
+        if (extra.tool) {
+          const tb = document.createElement('span');
+          if (extra.tool === 'none') {
+            tb.className = 'badge badge-none';
+            tb.textContent = '🧠 內建思考模型';
+          } else {
+            const conf = (extra.confidence * 100).toFixed(0);
+            tb.className = 'badge badge-tool';
+            tb.textContent = `🛠️ 已調用: ${extra.tool} (${conf}%)`;
+          }
+          badges.appendChild(tb);
+        }
+
+        body.appendChild(badges);
+      }
+
+      div.appendChild(avatar);
+      div.appendChild(body);
+      el.appendChild(div);
+      el.scrollTop = el.scrollHeight;
+      return div;
+    }
+
+    function appendThinking() {
+      const el = document.getElementById('messages');
+      const div = document.createElement('div');
+      div.className = 'msg agent thinking';
+      div.id = '__thinking__';
+      div.innerHTML = `
+    <div class="msg-avatar">🧠</div>
+    <div class="msg-body">
+      <div class="msg-meta">${agentName}</div>
+      <div class="msg-text">
+        <span style="color:var(--text-muted);font-size:12px">思考中</span>
+        <span class="dot-anim">
+          <span></span><span></span><span></span>
+        </span>
+      </div>
+    </div>`;
+      el.appendChild(div);
+      el.scrollTop = el.scrollHeight;
+    }
+
+    function removeThinking() {
+      const t = document.getElementById('__thinking__');
+      if (t) t.remove();
+    }
+
+    /* ── Send Message ────────────────────────────────────────────────────────── */
+    async function sendMessage() {
+      if (isLoading) return;
+      const input = document.getElementById('user-input');
+      const text = input.value.trim();
+      if (!text) return;
+
+      input.value = '';
+      autoResize(input);
+
+      appendMsg('user', text);
+      appendThinking();
+      setLoading(true);
+
+      try {
+        const body = { message: text };
+        if (sessionId) body.session_id = sessionId;
+
+        const r = await fetch(`${API}/chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+
+        removeThinking();
+
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({ detail: r.statusText }));
+          appendMsg('agent', `⚠️ 錯誤：${err.detail ?? '未知錯誤'}`, {});
+          log(`chat 錯誤 ${r.status}：${err.detail}`, 'err');
+          return;
+        }
+
+        const d = await r.json();
+        sessionId = d.session_id;
+        turnCount++;
+
+        appendMsg('agent', d.text, {
+          action: d.gating_action,
+          score: d.gating_score,
+          memory_hits: d.memory_hits,
+          tool: d.recommended_tool,
+          confidence: d.judge_confidence
+        });
+
+        // Update panels
+        updateNeuroPanel(d.neurochem);
+        updateGatingPanel(d.gating_action, d.gating_score, d);
+        updateMemPanel(d.memory_hits);
+
+        document.getElementById('session-id').textContent = sessionId ?? '–';
+        document.getElementById('session-turns').textContent = `回合數：${turnCount}`;
+
+
+        log(`[${d.gating_action.toUpperCase()}] score=${d.gating_score.toFixed(2)} | mem×${Object.values(d.memory_hits).reduce((a, b) => a + b, 0)}`);
+
+      } catch (e) {
+        removeThinking();
+        appendMsg('agent', `⚠️ 網路錯誤：${e.message}`, {});
+        log(`網路錯誤：${e.message}`, 'err');
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    /* ── Dream ───────────────────────────────────────────────────────────────── */
+    async function triggerDream() {
+      const btn = document.getElementById('dream-btn');
+      btn.disabled = true;
+      btn.textContent = '🌙 夢境中…';
+      log('手動觸發夢境週期…', 'warn');
+
+      try {
+        const r = await fetch(`${API}/dream`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ replay_only: false })
+        });
+        const d = await r.json();
+        const result = document.getElementById('dream-result');
+        result.textContent = d.summary ?? JSON.stringify(d, null, 2);
+        result.style.display = 'block';
+        log(`夢境完成 ${d.duration_seconds?.toFixed(1)}s`, 'ok');
+        await fetchStatus();
+      } catch (e) {
+        log(`夢境失敗：${e.message}`, 'err');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '🌙 Dream';
+      }
+    }
+
+    /* ── Reflect ─────────────────────────────────────────────────────────────── */
+    async function triggerReflect() {
+      const btn = document.getElementById('reflect-btn');
+      btn.disabled = true;
+      btn.textContent = '🧠 反思中…';
+      log('手動觸發內部反思…', 'warn');
+
+      try {
+        const r = await fetch(`${API}/reflect`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        const d = await r.json();
+
+        let actionMsg = `沒有行動`;
+        if (d.action === 'question') actionMsg = `提問: ${d.content}`;
+        else if (d.action === 'browse') actionMsg = `瀏覽: ${d.content}`;
+
+        log(`[反思] Action: ${d.action} | Reasoning: ${d.reasoning}`, d.action === 'none' ? 'ok' : 'warn');
+      } catch (e) {
+        log(`反思失敗：${e.message}`, 'err');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '🧠 反思';
+      }
+    }
+
+    /* ── Helpers ─────────────────────────────────────────────────────────────── */
+    function setLoading(v) {
+      isLoading = v;
+      document.getElementById('send-btn').disabled = v;
+      document.getElementById('user-input').disabled = v;
+    }
+
+    function autoResize(el) {
+      el.style.height = 'auto';
+      el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+    }
+
+    /* ── Keyboard ─────────────────────────────────────────────────────────────── */
+    document.getElementById('user-input').addEventListener('keydown', e => {
+      // isComposing=true 代表 IME 正在組字（中文輸入法選字中），不應觸發送出
+      if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+        e.preventDefault();
+        sendMessage();
+      }
+    });
+
+
+    document.getElementById('user-input').addEventListener('input', function () {
+      autoResize(this);
+    });
+
+    /* ── Auto-refresh status every 30s ─────────────────────────────────────────── */
+    setInterval(fetchStatus, 30_000);
+
+    /* ── Poll /proactive every 60s — ARIA 主動訊息 ────────────────────────────── */
+    async function pollProactive() {
+      try {
+        const r = await fetch(`${API}/proactive`);
+        if (!r.ok) return;
+        const d = await r.json();
+        if (!d.messages || d.messages.length === 0) return;
+        for (const msg of d.messages) {
+          if (msg.type === 'question') {
+            // 以特殊「主動」氣泡顯示
+            appendMsg('agent', `💭 ${msg.content}`, true);
+            log(`ARIA 主動提問 (${msg.timestamp?.slice(11, 16) || ''})`);
+          } else if (msg.type === 'browse') {
+            appendMsg('agent', `🔍 我想查一下：${msg.content}`, true);
+            log(`ARIA 想瀏覽：${msg.content}`);
+          }
+        }
+      } catch (_) { /* 靜默失敗 */ }
+    }
+    setInterval(pollProactive, 60_000);
+
+
+    /* ── Reset ───────────────────────────────────────────────────────────────── */
+    function openResetModal() {
+      document.getElementById('reset-modal').classList.add('open');
+    }
+
+    async function confirmReset() {
+      const clearContext = document.getElementById('chk-reset-context').checked;
+      const clearDb = document.getElementById('chk-reset-db').checked;
+      const clearNeuro = document.getElementById('chk-reset-neuro').checked;
+      const clearSoul = document.getElementById('chk-reset-soul').checked;
+
+      if (!clearContext && !clearDb && !clearNeuro && !clearSoul) {
+        log('未選擇任何重置項目', 'warn');
+        closeModal('reset-modal');
+        return;
+      }
+
+      closeModal('reset-modal');
+      log('正在執行選擇性重置…', 'warn');
+      try {
+        const payload = {
+          clear_context: clearContext,
+          clear_db: clearDb,
+          clear_neuro: clearNeuro,
+          clear_soul_note: clearSoul
+        };
+
+        const r = await fetch(`${API}/reset`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.detail || '未知錯誤');
+
+        if (clearContext) {
+          const msgs = document.getElementById('messages');
+          msgs.innerHTML = '';
+          appendMsg('agent', '系統已應用重置。歷史對話已清除。');
+          sessionId = null;
+          turnCount = 0;
+          document.getElementById('session-id').textContent = '（已重置）';
+          document.getElementById('session-turns').textContent = '';
+        }
+
+        if (clearNeuro) {
+          updateNeuroPanel({ dopamine: 0.5, serotonin: 0.5, mode: 'BALANCED' });
+          updateGatingPanel('pass', 1.0);
+        }
+
+        if (clearDb) {
+          updateMemPanel({ episodes: 0, concepts: 0, procedures: 0 });
+        }
+
+        log(`系統重置完成 ✓ (${d.message})`);
+      } catch (e) {
+        log(`重置失敗：${e.message}`, 'err');
+      }
+    }
+
+    /* ── Soul Note 檢視器 ────────────────────────────────────────────────────── */
+    let soulNoteData = null;
+
+    async function openSoulNoteViewer() {
+      document.getElementById('soulnote-modal').classList.add('open');
+      await refreshSoulNoteViewer();
+    }
+
+    async function refreshSoulNoteViewer() {
+      const pre = document.getElementById('soulnote-json-pre');
+      pre.textContent = '載入中…\n(如果過慢，可能是伺服器延遲)';
+      try {
+        const response = await fetch(`${API}/soul_notes`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        soulNoteData = data;
+        renderSoulNote('reflections');
+      } catch (err) {
+        console.error('Soul Note 讀取失敗:', err);
+        pre.textContent = `無法載入筆記:\n\n${err.message}`;
+        soulNoteData = null;
+      }
+    }
+
+    function renderSoulNote(type) {
+      if (!soulNoteData) return;
+      document.getElementById('sntab-reflections').classList.toggle('active', type === 'reflections');
+      document.getElementById('sntab-notes').classList.toggle('active', type === 'notes');
+
+      const pre = document.getElementById('soulnote-json-pre');
+      let textLines = [];
+
+      if (type === 'reflections') {
+        const items = soulNoteData.reflections || [];
+        if (!items.length) {
+          pre.textContent = '（無反思記錄）';
+          return;
+        }
+        items.forEach(item => {
+          textLines.push(`=== [${item.date}] 反思 (包含 ${item.note_count} 筆筆記) ===`);
+          textLines.push(`【分類】: ${item.categories?.join(', ')}`);
+          if (item.key_insights && item.key_insights.length > 0) {
+            textLines.push(`【關鍵要點】:\n- ` + item.key_insights.join('\n- '));
+          }
+          textLines.push(`\n${item.content}`);
+          textLines.push('\n----------------------------------------\n');
+        });
+      } else {
+        const items = soulNoteData.notes || [];
+        if (!items.length) {
+          pre.textContent = '（無未壓縮筆記）';
+          return;
+        }
+        items.forEach(note => {
+          textLines.push(`[${note.timestamp}] 【${note.category}】  ${note.tags ? note.tags.join(', ') : ''}`);
+          textLines.push(`${note.content}`);
+          if (note.metadata && Object.keys(note.metadata).length > 0) {
+            textLines.push(`Meta: ${JSON.stringify(note.metadata)}`);
+          }
+          textLines.push('\n----------------------------------------\n');
+        });
+      }
+
+      pre.textContent = textLines.join('\n');
+    }
+
+    /* ── Modal Helpers ───────────────────────────────────────────────────────── */
+    function closeModal(id) {
+      document.getElementById(id).classList.remove('open');
+      if (id === 'db-modal') {
+        currentDbTab = null;
+      }
+      if (id === 'soulnote-modal') {
+        soulNoteData = null;
+      }
+    }
+
+    // Modal overlay click 統一處理
+    function handleModalOverlayClick(e, id) {
+      // 點擊遮罩背景（非 modal-box）時關閉
+      if (e.target.id === id) closeModal(id);
+    }
+
+    /* ── Debug Log Viewer ────────────────────────────────────────────────────── */
+    let _logLevel = '';
+    let _logAutoTimer = null;
+    const LEVEL_CLASS = { DEBUG: 'lv-debug', INFO: 'lv-info', WARNING: 'lv-warning', ERROR: 'lv-error', CRITICAL: 'lv-critical' };
+
+    async function openLogViewer() {
+      document.getElementById('log-modal').classList.add('open');
+      await fetchLogs();
+      startLogAuto();
+    }
+
+    function startLogAuto() {
+      stopLogAuto();
+      if (document.getElementById('log-auto')?.checked) {
+        _logAutoTimer = setInterval(fetchLogs, 3000);
+      }
+    }
+
+    function stopLogAuto() {
+      if (_logAutoTimer) { clearInterval(_logAutoTimer); _logAutoTimer = null; }
+    }
+
+    function toggleLogAuto(on) {
+      on ? startLogAuto() : stopLogAuto();
+    }
+
+    async function refreshLogViewer() {
+      await fetchLogs();
+    }
+
+    function setLogLevel(level) {
+      _logLevel = level;
+      document.querySelectorAll('.log-filter-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.level === level);
+      });
+      fetchLogs();
+    }
+
+    async function fetchLogs() {
+      const container = document.getElementById('log-entries');
+      const url = `${API}/logs?limit=200${_logLevel ? '&level=' + _logLevel : ''}`;
+      try {
+        const r = await fetch(url);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const d = await r.json();
+        document.getElementById('log-count').textContent = `${d.total} 筆`;
+        renderLogs(d.entries);
+      } catch (e) {
+        container.textContent = `⚠ 載入失敗：${e.message}`;
+      }
+    }
+
+    function renderLogs(entries) {
+      const container = document.getElementById('log-entries');
+      const wasAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 40;
+
+      if (entries.length === 0) {
+        container.textContent = '（無符合的 log 記錄）';
+        return;
+      }
+
+      container.innerHTML = entries.map(e => {
+        const cls = LEVEL_CLASS[e.level] ?? 'lv-info';
+        const name = e.logger.replace('openSOUL.', '');
+        const msg = e.message.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        return `<div class="log-row ${cls}">` +
+          `<span class="log-row-ts">${e.time}</span>` +
+          `<span class="log-row-lvl">${e.level}</span>` +
+          `<span class="log-row-name" title="${e.logger}">${name}</span>` +
+          `<span class="log-row-msg">${msg}</span>` +
+          `</div>`;
+      }).join('');
+
+      if (wasAtBottom) container.scrollTop = container.scrollHeight;
+    }
+
+    // 關閉 log modal 時停止自動刷新
+    const _origCloseModal = window.closeModal;
+
+    /* ── SOUL 編輯器 ──────────────────────────────────────────────────────────── */
+    async function openSoulEditor() {
+      const overlay = document.getElementById('soul-modal');
+      const textarea = document.getElementById('soul-textarea');
+      const status = document.getElementById('soul-status');
+      const saveBtn = document.getElementById('soul-save-btn');
+
+      textarea.value = '載入中…';
+      textarea.disabled = true;
+      saveBtn.disabled = true;
+      status.textContent = '';
+      status.style.color = '';
+      overlay.classList.add('open');
+
+      try {
+        const r = await fetch(`${API}/soul`);
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({ detail: r.statusText }));
+          throw new Error(err.detail ?? `HTTP ${r.status}`);
+        }
+        const d = await r.json();
+        textarea.value = d.content ?? '';
+        textarea.disabled = false;
+        saveBtn.disabled = false;
+        status.textContent = '✓ 已載入 SOUL.md';
+        status.style.color = 'var(--pass-text)';
+      } catch (e) {
+        textarea.value = '';
+        textarea.disabled = false;
+        saveBtn.disabled = false;
+        status.textContent = `⚠ 載入失敗：${e.message}`;
+        status.style.color = 'var(--suppress-text)';
+      }
+    }
+
+    async function saveSoul() {
+      const textarea = document.getElementById('soul-textarea');
+      const status = document.getElementById('soul-status');
+      const saveBtn = document.getElementById('soul-save-btn');
+
+      saveBtn.disabled = true;
+      saveBtn.textContent = '儲存中…';
+      status.textContent = '';
+
+      try {
+        const r = await fetch(`${API}/soul`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: textarea.value }),
+          signal: AbortSignal.timeout(10000),
+        });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.detail ?? `HTTP ${r.status}`);
+        status.textContent = `✓ ${d.message}`;
+        status.style.color = 'var(--pass-text)';
+        log('SOUL.md 已儲存並重新載入 ✓');
+        setTimeout(() => closeModal('soul-modal'), 800);
+      } catch (e) {
+        status.textContent = `⚠ 儲存失敗：${e.message}`;
+        status.style.color = 'var(--suppress-text)';
+        log(`SOUL.md 儲存失敗：${e.message}`, 'err');
+      } finally {
+        saveBtn.disabled = false;
+        saveBtn.textContent = '儲存';
+      }
+    }
+
+    /* ── 資料庫 JSON 檢視器 ──────────────────────────────────────────────────── */
+    let currentDbGraph = 'episodic';
+
+    async function openDbViewer() {
+      document.getElementById('db-modal').classList.add('open');
+      await loadDbStats();
+      await loadDbGraph('episodic');
+    }
+
+    async function refreshDbViewer() {
+      await loadDbStats();
+      await loadDbGraph(currentDbGraph);
+    }
+
+    async function loadDbStats() {
+      const bar = document.getElementById('db-stats-bar');
+      try {
+        const r = await fetch(`${API}/memory/stats`, { signal: AbortSignal.timeout(8000) });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const d = await r.json();
+        bar.innerHTML = ['episodic', 'semantic', 'procedural'].map(g => {
+          const s = d[g] ?? {};
+          return `<span class="db-stat-chip">${g}: 節點 <strong>${s.nodes ?? 0}</strong> · 邊 <strong>${s.edges ?? 0}</strong></span>`;
+        }).join('');
+      } catch (e) {
+        bar.innerHTML = `<span class="db-stat-chip" style="color:var(--suppress-text)">統計載入失敗：${e.message}</span>`;
+      }
+    }
+
+    async function loadDbGraph(graph) {
+      currentDbGraph = graph;
+
+      // 更新分頁按鈕狀態
+      ['episodic', 'semantic', 'procedural'].forEach(g => {
+        document.getElementById(`dbtab-${g}`).classList.toggle('active', g === graph);
+      });
+
+      const pre = document.getElementById('db-json-pre');
+      pre.textContent = '載入中…';
+
+      try {
+        const r = await fetch(`${API}/debug/graph?graph=${graph}&limit=50`, {
+          signal: AbortSignal.timeout(10000),
+        });
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({ detail: r.statusText }));
+          throw new Error(err.detail ?? `HTTP ${r.status}`);
+        }
+        const d = await r.json();
+        pre.textContent = JSON.stringify(d, null, 2);
+      } catch (e) {
+        pre.textContent = `⚠ 載入失敗：${e.message}`;
+      }
+    }
+
+    /* ── Init ─────────────────────────────────────────────────────────────────── */
+    window.addEventListener('DOMContentLoaded', () => {
+      checkHealth();
+      document.getElementById('user-input').focus();
+    });
+  </script>
+</body>
+
+</html>

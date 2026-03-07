@@ -1,0 +1,81 @@
+# 環境變數（所有目錄）
+.env
+.env.local
+.env.*.local
+openclaw/.env
+
+# API 金鑰和憑證
+*.key
+*.pem
+*_secret.json
+credentials.json
+token.json
+
+# 用戶數據
+soul_notes.json
+soul_reflections.json
+gmail_cache.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Poetry
+poetry.lock
+
+# 虛擬環境
+venv/
+env/
+ENV/
+
+# 日誌
+*.log
+uvicorn.log
+
+# Claude Code 本地設定
+.claude/._*
+.claude/keybindings.json
+
+# 臨時文件
+*.tmp
+*.temp
+.cache/
+
+# Node 模塊（如果有前端）
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Docker
+docker-compose.override.yml
+
+# 本地數據庫
+*.db
+*.sqlite
+*.sqlite3

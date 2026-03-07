@@ -1,0 +1,60 @@
+[tool.poetry]
+name = "opensoul"
+version = "0.1.0"
+description = "A human-mind-inspired neuro-symbolic cognitive AI system with dynamic FalkorDB GraphRAG memory"
+authors = ["openSOUL Contributors"]
+readme = "README.md"
+packages = [{ include = "soul" }]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+falkordb = "^1.0"
+graphrag-sdk = ">=0.4"
+langchain = "^0.3"
+langchain-community = "^0.3"
+langchain-anthropic = "^0.3"
+google-generativeai = "^0.8"
+google-auth-oauthlib = "^1.2"
+google-api-python-client = "^2.118"
+anthropic = "^0.40"
+apscheduler = "^3.10"
+fastapi = "^0.115"
+uvicorn = { version = "^0.32", extras = ["standard"] }
+pydantic = "^2.9"
+pydantic-settings = "^2.6"
+typer = "^0.13"
+rich = "^13.9"
+python-dotenv = "^1.0"
+numpy = ">=1.26"
+openai = "^1.50"
+tiktoken = "^0.8"
+python-frontmatter = "^1.1"
+httpx = "^0.28"
+tenacity = "^9.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3"
+pytest-asyncio = "^0.24"
+pytest-cov = "^6.0"
+ruff = "^0.8"
+mypy = "^1.13"
+
+[tool.poetry.scripts]
+soul = "soul.interface.cli:app"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.mypy]
+python_version = "3.11"
+strict = false
+ignore_missing_imports = true
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

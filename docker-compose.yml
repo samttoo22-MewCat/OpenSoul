@@ -1,0 +1,40 @@
+services:
+  # 核心資料庫服務
+  falkordb:
+    image: falkordb/falkordb:latest
+    container_name: opensoul-falkordb
+    ports:
+      - "6379:6379"
+    volumes:
+      # 改用 Bind Mount 到主機路徑，讓您能親眼在 data/ 目錄看到資料
+      - ./data/falkordb:/data
+    restart: unless-stopped
+    environment:
+      - FALKORDB_BROWSER=off
+      - REDIS_ARGS=--appendonly yes --appendfsync everysec --save 60 1
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "6379", "ping"]
+      interval: 5s # 加快健康檢查
+      timeout: 3s
+      retries: 5
+
+  # 獨立的檢視器
+  falkor-browser:
+    image: falkordb/falkordb-browser:latest
+    container_name: opensoul-falkor-browser
+    ports:
+      - "3000:3000"
+    environment:
+      - FALKORDB_HOST=falkordb
+      - FALKORDB_PORT=6379
+    # 增加延遲，確保資料庫真正就緒
+    entrypoint: ["sh", "-c", "sleep 5 && /var/lib/falkordb/bin/falkordb-browser"]
+    depends_on:
+      falkordb:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Soul API 現在直接在本機運行（不再使用 Docker），請用：
+  # python scripts/run_api.py
+  # 或
+  # PYTHONIOENCODING=utf-8 uvicorn soul.interface.api:app --host 0.0.0.0 --port 8002

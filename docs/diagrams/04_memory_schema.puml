@@ -1,0 +1,94 @@
+@startuml openSOUL_memory_schema
+!theme plain
+skinparam defaultFontName "Noto Sans CJK TC"
+skinparam backgroundColor #FAFAFA
+skinparam classBackgroundColor #FEFEFE
+skinparam classBorderColor #AAAAAA
+skinparam classAttributeIconSize 0
+skinparam packageBackgroundColor #F8F8F8
+
+title openSOUL — FalkorDB 三記憶圖譜 Schema
+
+package "soul_semantic（語意記憶圖譜）" #DDFFDD {
+  class Concept {
+    + id : String <<UUID>>
+    + name : String
+    + type : "entity"|"rule"|"abstraction"
+    + description : String
+    + embedding : vecf32[1536]
+    + created_at : DateTime
+    + updated_at : DateTime
+  }
+
+  class Rule {
+    + id : String <<UUID>>
+    + condition : String
+    + action : String
+    + confidence : Float
+    + domain : String
+  }
+
+  Concept "u" -right-> "v" Concept : RELATES_TO\n{weight: Float\nfrequency: Int\nrecency: Float\nsalience: Float\nlast_accessed: DateTime}
+  Concept --> Rule : HAS_RULE
+  Rule --> Concept : APPLIES_TO
+  Concept --> Concept : CONTRADICTS
+  Concept --> Concept : LATENT_BRIDGE\n<<夢境捷徑>>\n{reason: String}
+}
+
+package "soul_episodic（情節記憶圖譜）" #DDEEFF {
+  class Episode {
+    + id : String <<UUID>>
+    + content : String
+    + user_input : String
+    + agent_response : String
+    + embedding : vecf32[1536]
+    + timestamp : DateTime
+    + session_id : String
+    + da_weight : Float
+    + ht_weight : Float
+    + salience_score : Float
+    + is_dreamed : Boolean
+  }
+
+  class Entity {
+    + id : String <<UUID>>
+    + name : String
+    + type : "person"|"concept"\n      |"action"|"tool"
+    + description : String
+    + src : String <<Episode ID>>
+  }
+
+  Episode -right-> Episode : PRECEDES\n{time_delta: Float}
+  Episode --> Entity : MENTIONS
+  Entity --> Entity : TRIGGERED_BY\n<<線索鏈>>
+}
+
+package "soul_procedural（程序性記憶圖譜）" #FFFFCC {
+  class Procedure {
+    + id : String <<UUID>>
+    + name : String
+    + description : String
+    + steps : String <<JSON>>
+    + embedding : vecf32[1536]
+    + success_count : Integer
+    + failure_count : Integer
+    + domain : String
+    + created_at : DateTime
+    + last_used : DateTime
+  }
+
+  Procedure -right-> Procedure : REFINES\n{version: Int}
+  Procedure --> Concept : APPLIES_TO
+  Procedure --> Episode : DERIVED_FROM_EPISODE
+}
+
+Episode --> Concept : ACTIVATED\n<<EcphoryRAG 觸發>>
+Procedure --> Rule : VALIDATES\n<<基底核驗證>>
+
+note bottom of Concept
+  邊緣權重公式：
+  W = α·Recency + β·Frequency + γ·Salience
+  Recency = exp(−λ·t), α=0.3, β=0.4, γ=0.3
+end note
+
+@enduml

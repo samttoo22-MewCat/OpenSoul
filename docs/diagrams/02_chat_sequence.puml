@@ -1,0 +1,78 @@
+@startuml openSOUL_chat_sequence
+!theme plain
+skinparam defaultFontName "Noto Sans CJK TC"
+skinparam backgroundColor #FAFAFA
+skinparam sequenceArrowThickness 1.5
+skinparam sequenceGroupBackgroundColor #F0F8FF
+skinparam sequenceGroupBorderColor #6699CC
+
+title openSOUL — 對話處理流程（含潛意識閘門驗證螺旋）
+
+autonumber
+
+actor "User\n使用者" as User
+participant "CLI / API\nInterface" as UI #E8F4F8
+participant "CognitiveAgent\n前額葉" as Agent #DDEEFF
+participant "NeurochemState\n杏仁核" as Neuro #FFFFCC
+participant "EcphoryRetrieval\n海馬迴" as Retrieval #DDFFDD
+participant "FalkorDB" as DB #FFF3E0
+participant "LLM\n(Claude)" as LLM #F3E5F5
+participant "ProceduralVerifier\n基底核" as Verifier #FFE0DD
+participant "ThalamicInhibitor\n視丘" as Inhibitor #FFE0DD
+
+User -> UI : 輸入查詢
+UI -> Agent : handle_message(query)
+
+Agent -> Neuro : evaluate_input_uncertainty(query)
+note right of Neuro
+  若查詢模糊 → 血清素 ↑
+  若清晰明確 → 保持穩定
+end note
+Neuro --> Agent : NeurochemState
+
+Agent -> Retrieval : ecphory_retrieve(query, state)
+Retrieval -> DB : 向量相似搜尋（種子節點）
+DB --> Retrieval : seed_nodes
+Retrieval -> DB : 多跳關聯展開\n(BFS 廣度由血清素決定)
+DB --> Retrieval : context_engrams
+Retrieval --> Agent : memory_context
+
+Agent -> LLM : generate(\n  system_prompt + SOUL.md\n  + memory_context + query\n)
+LLM --> Agent : draft_response
+
+Agent -> Verifier : verify(draft_response, query)
+Verifier -> DB : 查詢 soul_semantic（事實支撐）
+DB --> Verifier : fact_support
+Verifier -> DB : 查詢 soul_procedural（邏輯規則）
+DB --> Verifier : rule_support
+Verifier --> Agent : consistency_score
+
+alt 通過驗證 (score > threshold)
+  Agent -> DB : write_episode(\n  query, response,\n  da_weight, ht_weight\n)
+  Agent -> Neuro : on_success()
+  note right of Neuro
+    多巴胺 ↑
+    強化此推理路徑
+  end note
+  Agent --> UI : final_response
+  UI --> User : 顯示回覆 ✓
+
+else 驗證失敗 (score ≤ threshold)
+  Agent -> Inhibitor : send_inhibitory_signal(\n  error_code, violated_rules\n)
+  Inhibitor -> LLM : regenerate(\n  error_context + constraints\n)
+  note right of LLM
+    最多重試 3 次
+  end note
+  LLM --> Inhibitor : revised_response
+  Inhibitor --> Agent : revised_response
+  Agent -> Verifier : verify(revised_response, query)
+  Agent -> Neuro : on_uncertainty()
+  note right of Neuro
+    血清素 ↑
+    放慢後續決策
+  end note
+  Agent --> UI : final_response（已驗證）
+  UI --> User : 顯示回覆（已修正）✓
+end
+
+@enduml

@@ -1,0 +1,77 @@
+@startuml openSOUL_dream_sequence
+!theme plain
+skinparam defaultFontName "Noto Sans CJK TC"
+skinparam backgroundColor #FAFAFA
+skinparam sequenceArrowThickness 1.5
+skinparam sequenceGroupBackgroundColor #F5F0FF
+skinparam sequenceGroupBorderColor #9C77CC
+
+title openSOUL — Dream Engine 離線記憶鞏固流程（DMN）
+
+autonumber
+
+participant "APScheduler\n(DMN 觸發器)" as Scheduler #EDE7F6
+participant "DreamEngine\ndream/engine.py" as Dream #EDE7F6
+participant "LiDER Replay\ndream/replay.py" as Replay #E8EAF6
+participant "KnowledgeDistillation\ndream/distillation.py" as Distill #E8EAF6
+participant "GraphPruning\ndream/pruning.py" as Prune #E8EAF6
+participant "FalkorDB" as DB #FFF3E0
+participant "LLM\n(Claude)" as LLM #F3E5F5
+participant "NeurochemState" as Neuro #FFFFCC
+participant "SOUL.md" as Soul #F5F5F5
+
+Scheduler -> Dream : 閒置 5 分鐘 /\n凌晨 3 點觸發
+Dream -> Soul : 更新 last_dream 時間戳
+
+group 階段 1：LiDER 經驗重播（Lucid Dreaming）
+  Dream -> Replay : start_replay_cycle()
+  Replay -> DB : 抽取高顯著性未重播情節\n(da_weight > 0.7 AND is_dreamed = false)
+  DB --> Replay : high_salience_episodes
+
+  loop 每個高顯著情節
+    Replay -> LLM : 以當前最新策略\n重新推演過去情境
+    LLM --> Replay : dream_response
+    Replay -> Replay : 比較夢境路徑 vs 歷史路徑\n（效率、準確性評估）
+
+    alt 夢境路徑更優
+      Replay -> DB : 寫入新 Procedure\n至 soul_procedural
+      note right : 技能庫更新\n（程序性記憶強化）
+    end
+
+    Replay -> DB : 標記 is_dreamed = true
+  end
+  Replay --> Dream : replay_report
+end
+
+group 階段 2：知識蒸餾（情節 → 語意抽象規則）
+  Dream -> Distill : start_distillation()
+  Distill -> DB : 掃描 soul_episodic\n尋找重複拓撲模式（Motifs）
+  DB --> Distill : recurring_patterns
+
+  Distill -> LLM : 抽象化壓縮為通用規則
+  LLM --> Distill : abstract_rules
+
+  Distill -> DB : 在 soul_semantic\n創建新 Rule / Concept 節點
+  Distill -> DB : 建立 DERIVED_FROM 邊緣
+  Distill --> Dream : distillation_report
+end
+
+group 階段 3：圖譜修剪與跨域橋接（頓悟機制）
+  Dream -> Prune : start_pruning()
+  Prune -> DB : 刪除 weight < 0.05 的邊緣
+  Prune -> DB : 歸檔 salience < 0.1\n且 >30天未存取的節點
+  Prune -> DB : 重新計算 max_frequency\n（正規化基準）
+
+  Prune -> DB : 尋找語意相近\n但圖譜未連結的 Concept 社群
+  DB --> Prune : disconnected_communities
+
+  loop 每對近鄰社群
+    Prune -> DB : 建立 LATENT_BRIDGE 邊緣\n（頓悟捷徑 / Insight）
+  end
+  Prune --> Dream : pruning_report
+end
+
+Dream -> Neuro : 根據夢境品質\n調整神經化學狀態
+Dream -> Soul : 更新 SOUL.md frontmatter\n(dopamine_level, serotonin_level,\ntotal_procedures, last_dream)
+
+@enduml
