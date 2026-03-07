@@ -1,7 +1,7 @@
 # OpenSoul
 
 <div align="center">
-  <img src="./OpenSoul_logo.png" alt="OpenSoul Logo" width="200" />
+  <img src="./OpenSoul_logo.png" alt="OpenSoul Logo" width="600" />
 </div>
 
 > **人類大腦啟發的神經符號認知 AI 系統**
