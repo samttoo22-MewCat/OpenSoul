@@ -4,7 +4,7 @@
   <img src="./OpenSoul_logo.png" alt="OpenSoul Logo" width="600" />
 </div>
 
-**人類大腦啟發的神經符號認知 AI 系統**
+**一個以人類大腦結構為啟發的神經符號認知 AI 系統**<br>
 以 FalkorDB GraphRAG 三記憶圖譜為核心，結合 OpenClaw 技能集成與虛擬神經化學動態調控。
 
 ---
