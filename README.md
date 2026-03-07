@@ -1,3 +1,7 @@
+<div align="center">
+  <a href="README.md">🇹🇼 繁體中文</a> | <a href="README.en.md">🇺🇸 English</a>
+</div>
+
 # OpenSoul
 
 <div align="center">
@@ -160,6 +164,21 @@ cp .env.example .env
   3. 創建 OAuth2 認證（類型：Desktop Application）
   4. 下載認證 JSON 文件到 `workspace/credentials.json`
   5. 首次運行時會自動進行 OAuth2 授權流程，生成 `workspace/token.json`
+
+**梦境反思 Telegram 通知**（可選）：
+- 若要在 Telegram 上接收夢境反思（自動使用 OpenClaw 的 Telegram Bot）：
+  1. 確保 `openclaw/.env` 中已配置 Telegram Bot Token：
+     ```env
+     TELEGRAM_BOT_TOKEN=123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11
+     ```
+  2. 在 `.env` 中啟用梦境 Telegram 通知：
+     ```env
+     SOUL_DREAM_TELEGRAM_NOTIFY=true
+     SOUL_TELEGRAM_CHAT_ID=your-chat-id  # 可選
+     ```
+  3. 重啟服務後，夢境反思會自動發送到 Telegram
+
+  **✨ 優勢**：不需要重複配置 Telegram Bot，直接使用 OpenClaw 已有的 Bot
 
 詳細的所有配置選項請參見 `.env.example` 中的註釋說明。
 
@@ -400,6 +419,9 @@ OpenSoul 提供完整的 Web 界面，支援以下功能：
 - `SOUL_DREAM_IDLE_MINUTES`: 無互動多久後觸發夢境（默認 120 分鐘）
 - `SOUL_DREAM_CRON`: Cron 表達式，定時夢境（如 `0 3 * * *` = 每日凌晨 3 點）
 - `SOUL_DREAM_REPLAY_DA_THRESHOLD`: 多巴胺閾值，高於此值時觸發反思（0.0-1.0）
+- `SOUL_DREAM_TELEGRAM_NOTIFY`: 是否發送夢境反思到 Telegram（true/false）
+- `SOUL_DREAM_TELEGRAM_CHAT_ID`: Telegram 聊天 ID
+- `SOUL_DREAM_TELEGRAM_BOT_TOKEN`: Telegram Bot Token
 
 **高級調整**（專家用）：
 - `SOUL_DECAY_LAMBDA`: 記憶遺忘速率（遺忘曲線斜度）
