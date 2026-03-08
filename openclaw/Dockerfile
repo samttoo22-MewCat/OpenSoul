@@ -15,6 +15,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-venv \
     ca-certificates curl gnupg lsb-release \
     $OPENCLAW_DOCKER_APT_PACKAGES && \
+    pip3 install --no-cache-dir seleniumbase markdownify && \
     rm -rf /var/lib/apt/lists/*
 
 # 安裝 Docker CLI（用於 Sandbox 功能）

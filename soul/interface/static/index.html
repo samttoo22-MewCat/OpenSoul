@@ -5,6 +5,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>openSOUL — 仿人類心智認知 AI</title>
+  <!-- Bootstrap 5 CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <!-- Bootstrap Icons -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
   <style>
     /* ── Reset & Base ──────────────────────────────────────────────────────────── */
     *,
@@ -53,10 +57,47 @@
     /* ── Layout ───────────────────────────────────────────────────────────────── */
     #app {
       display: grid;
-      grid-template-rows: 52px 1fr;
+      grid-template-rows: auto 1fr;
       grid-template-columns: 1fr 300px;
       height: 100vh;
-      gap: 0;
+      overflow: hidden;
+    }
+
+    /* Mobile overrides for layout */
+    @media (max-width: 991.98px) {
+      #side-panel {
+        display: none !important;
+      }
+
+      #app {
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        overflow: hidden;
+      }
+
+      #header {
+        flex: 0 0 auto;
+        overflow-x: auto;
+        white-space: nowrap;
+        -webkit-overflow-scrolling: touch;
+        gap: 8px !important;
+        padding: 0 10px !important;
+        backdrop-filter: blur(10px);
+        background: rgba(17, 21, 32, 0.9);
+      }
+
+      #chat-col {
+        flex: 1 1 0%;
+        border-right: none !important;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .hdr-btn {
+        flex-shrink: 0;
+      }
     }
 
     /* ── Header ───────────────────────────────────────────────────────────────── */
@@ -69,6 +110,13 @@
       background: var(--panel);
       border-bottom: 1px solid var(--border);
       z-index: 10;
+      min-height: 52px;
+    }
+
+    @media (max-width: 991.98px) {
+      #header {
+        grid-column: 1 / 2;
+      }
     }
 
     .logo {
@@ -956,12 +1004,27 @@
 </head>
 
 <body>
+  <!-- Mobile Sidebar (Offcanvas) - Moved outside #app to avoid grid issues -->
+  <div class="offcanvas offcanvas-start bg-dark text-light border-end border-secondary" tabindex="-1" id="mobileSidebar"
+    aria-labelledby="mobileSidebarLabel">
+    <div class="offcanvas-header border-bottom border-secondary">
+      <h5 class="offcanvas-title" id="mobileSidebarLabel">系統狀態</h5>
+      <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+    </div>
+    <div class="offcanvas-body" id="mobile-sidebar-content">
+      <!-- Will be populated by JS or clone from side-panel -->
+    </div>
+  </div>
+
   <div id="app">
 
     <!-- ── Header ── -->
     <header id="header">
+      <button class="btn btn-outline-secondary d-lg-none me-2" type="button" data-bs-toggle="offcanvas"
+        data-bs-target="#mobileSidebar" aria-controls="mobileSidebar">
+        <i class="bi bi-list"></i>
+      </button>
       <div class="logo">
-        <!-- brain icon -->
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5b8cf7" stroke-width="1.6"
           stroke-linecap="round" stroke-linejoin="round">
           <path
@@ -970,12 +1033,12 @@
         </svg>
         openSOUL
       </div>
-      <span id="agent-name">–</span>
-      <div id="conn-status" style="margin-left:auto">
+      <span id="agent-name" class="d-none d-sm-inline">–</span>
+      <div id="conn-status" style="margin-left:auto" class="me-2">
         <div class="dot loading" id="conn-dot"></div>
-        <span id="conn-text">連線中…</span>
+        <span id="conn-text" class="d-none d-md-inline">連線中…</span>
       </div>
-      <button class="hdr-btn" onclick="fetchStatus()">↺ 更新</button>
+      <button class="hdr-btn" onclick="fetchStatus()"><i class="bi bi-arrow-clockwise"></i> 更新</button>
       <button class="hdr-btn" onclick="openSoulEditor()">📝 SOUL</button>
       <button class="hdr-btn" onclick="openDbViewer()">🗄 資料庫</button>
       <button class="hdr-btn" onclick="openSoulNoteViewer()">📔 Soul Note</button>
@@ -1987,8 +2050,19 @@
     window.addEventListener('DOMContentLoaded', () => {
       checkHealth();
       document.getElementById('user-input').focus();
+
+      // Clone sidebar content to mobile offcanvas
+      const sidePanel = document.getElementById('side-panel');
+      const mobileBody = document.getElementById('mobile-sidebar-content');
+      if (sidePanel && mobileBody) {
+        mobileBody.innerHTML = sidePanel.innerHTML;
+        // Synchronize IDs for cloned elements if needed, or use classes
+        // To keep it simple, we just replicate the view.
+      }
     });
   </script>
+  <!-- Bootstrap 5 Bundle JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 
 </html>

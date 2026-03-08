@@ -196,6 +196,40 @@ def detect_compose() -> list[str] | None:
     return None
 
 
+def needs_rebuild(image_name: str, dockerfile_path: Path) -> bool:
+    """
+    檢查映像檔是否需要重新建置。
+    邏輯：比較 Dockerfile 的修改時間與映像檔的建立時間。
+    """
+    if not dockerfile_path.exists():
+        return False
+
+    try:
+        # 取得映像檔建立時間 (ISO 8601 格式)
+        r = subprocess.run(
+            ["docker", "inspect", "-f", "{{.Created}}", image_name],
+            capture_output=True, text=True, encoding='utf-8', errors='replace'
+        )
+        if r.returncode != 0:
+            return True # 映像檔不存在，需要建置
+
+        image_created_str = r.stdout.strip()
+        # 處理 Docker 可能傳回的 nano seconds 與時區 (例如 2024-03-04T12:34:56.789Z)
+        # 我們簡化處理，僅取前 19 字元進行比較 (YYYY-MM-DDTHH:MM:SS)
+        image_created_ts = time.mktime(time.strptime(image_created_str[:19], "%Y-%m-%dT%H:%M:%S"))
+        
+        # 取得 Dockerfile 修改時間
+        dockerfile_mtime = dockerfile_path.stat().st_mtime
+        
+        # 如果 Dockerfile 較新 (差值大於 1 秒以避免浮點誤差)，則需要重新建置
+        if dockerfile_mtime > image_created_ts + 1:
+            return True
+    except Exception:
+        return True # 發生錯誤時保守起見建議重新建置
+
+    return False
+
+
 def wait_for_falkordb(timeout: int = HEALTH_TIMEOUT) -> bool:
     """
     輪詢 localhost:6379，等待 FalkorDB 就緒。
@@ -1115,8 +1149,12 @@ def action_start(compose_cmd: list[str]) -> None:
         except Exception:
             pass
 
-        if not image_exists:
-            warn("未偵測到 openclaw:local 鏡像，正在啟動構建（Raspberry Pi 上可能較慢）…")
+        if not image_exists or needs_rebuild("openclaw:local", openclaw_dir / "Dockerfile"):
+            if not image_exists:
+                warn("未偵測到 openclaw:local 鏡像，正在啟動構建（Raspberry Pi 上可能較慢）…")
+            else:
+                info("偵測到 Dockerfile 有變動，正在自動重新建置 OpenClaw 鏡像…")
+            
             docker_setup_script = openclaw_dir / "docker-setup.sh"
             dockerfile_path = openclaw_dir / "Dockerfile"
 

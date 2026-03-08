@@ -56,7 +56,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 
 from soul.affect.neurochem import NeurochemState
 from soul.affect.salience import SalienceEvaluator, SalienceSignals
-from soul.affect.subconscious import SubconsciousAssessor
+from soul.affect.subconscious import SubconsciousAssessor, SubconsciousAssessment
 from soul.core.config import settings
 from soul.core.session import Session
 from soul.gating.inhibitor import InhibitionAction, SubconsciousInhibitor
@@ -255,12 +255,53 @@ class SoulAgent:
             dopamine=neurochem.dopamine,
         )
 
-        # ── Step 2.5: 潛意識評估（LLM 內省，取代 regex heuristics）────────
-        assessment = self._subconscious.assess(
-            user_input=user_input,
-            memory_ctx=memory_ctx,
-            neurochem=neurochem,
-        )
+        from concurrent.futures import ThreadPoolExecutor
+        from soul.core.config import logger # Import logger here for use in this scope
+
+        # ── Step 2.5: 預先並行處理（內省評估 + 工具裁判） ───────────────────────
+        # 在進入主迴圈前，同時進行潛意識評估與第一次工具推薦，節省順序等待時間。
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            # 1. 潛意識評估（用於神經化學與顯著性更新）
+            future_assessment = executor.submit(
+                self._subconscious.assess,
+                user_input=user_input,
+                memory_ctx=memory_ctx,
+                neurochem=neurochem,
+            )
+            
+            # 2. 裁判模型推薦工具（第一次嘗試）
+            future_decision = None
+            current_tools = None # Initialize current_tools here
+            if tools:
+                future_decision = executor.submit(
+                    self._judge.recommend_tool,
+                    user_input=user_input,
+                    available_tools_with_schemas=tools 
+                )
+
+            # 等待必要決策完成以進行後續步驟
+            if future_decision:
+                try:
+                    decision = future_decision.result(timeout=15) # 設定超時防止卡死
+                    rec_name = decision.get("recommended_tool", "none")
+                    self.last_judge_decision = decision
+                    
+                    if rec_name != "none":
+                        norm_rec = rec_name.replace("-", "_")
+                        current_tools = [
+                            t for t in tools 
+                            if t.get("function", {}).get("name", "").replace("-", "_") == norm_rec
+                        ]
+                        if current_tools:
+                            safe_print(f"🎯 [Judge 決策] 推薦使用工具：{rec_name}")
+                            logger.info(f"👨‍⚖️ [Judge] 推薦工具: {rec_name} | 原因: {decision.get('reasoning')}")
+                    else:
+                        logger.info(f"👨‍⚖️ [Judge] 決策結果: 無需工具 | 原因: {decision.get('reasoning')}")
+                except Exception as e:
+                    logger.error(f"[Agent] 裁判模型並行呼叫失敗：{e}")
+                    current_tools = None
+            else:
+                current_tools = None
 
         # ── Step 3: 組合系統提示詞 ─────────────────────────────────────────
         system_prompt = self._soul.build_system_prompt(
@@ -280,36 +321,26 @@ class SoulAgent:
         error_feedback = "" # 🆕 用於存儲攔截或執行錯誤，回傳給 LLM
 
         for attempt in range(self._max_retries + 1):
-            from soul.core.config import logger
+            # from soul.core.config import logger # Already imported above
             logger.info(f"🧠 [Agent] ARIA 思考迴圈開始 (嘗試 #{attempt})...")
             
-            # 🆕 [Judge 決策] 唯一決策者：決定當前步驟是否需要工具與使用哪個工具
-            # 只有當我們還沒選定工具（或重試）時才跑決策
-            current_tools = None
-            if tools:
-                # 注入 Schema 資訊給 Judge
-                # 在實際應用中，tools 已經是包含 schema 的列表
-                # 我們把這個資料結構傳給 Judge
+            # 如果是重試（attempt > 0）且有工具，則需要重新跑一次裁判（因為 user_input 可能帶有 error_feedback）
+            if attempt > 0 and tools:
                 decision = self._judge.recommend_tool(
-                    user_input=user_input if not error_feedback else f"{user_input} (修正引導: {error_feedback})",
+                    user_input=f"{user_input}\n\n[修正引導: {error_feedback}]" if error_feedback else user_input,
                     available_tools_with_schemas=tools 
                 )
-                
                 rec_name = decision.get("recommended_tool", "none")
-                self.last_judge_decision = decision # 🆕 存儲決策
+                self.last_judge_decision = decision
                 
                 if rec_name != "none":
-                    # 只過濾出 Judge 推薦的那一個工具 (🆕 增加正規化比對，兼容 - 與 _)
                     norm_rec = rec_name.replace("-", "_")
                     current_tools = [
                         t for t in tools 
                         if t.get("function", {}).get("name", "").replace("-", "_") == norm_rec
                     ]
-                    if current_tools:
-                        safe_print(f"🎯 [Judge 決策] 推薦使用工具：{rec_name}")
-                        logger.info(f"👨‍⚖️ [Judge] 推薦工具: {rec_name} | 原因: {decision.get('reasoning')}")
                 else:
-                    logger.info(f"👨‍⚖️ [Judge] 決策結果: 無需工具 | 原因: {decision.get('reasoning')}")
+                    current_tools = None
 
             # 🆕 如果有錯誤反饋，將其加入對話歷史
             current_user_input = user_input
@@ -381,6 +412,13 @@ class SoulAgent:
         # 若有工具呼叫，給予多巴胺獎勵 (操作外界的快感)
         if final_tool_calls:
             neurochem.on_discovery(novelty=0.4)
+
+        # 取得潛意識評估結果（從並行任務中回收）
+        try:
+            assessment = future_assessment.result(timeout=10)
+        except Exception as e:
+            logger.error(f"[Agent] 潛意識評估並行呼叫失敗：{e}")
+            assessment = SubconsciousAssessment() # 使用預設空值
 
         # ── Step 5: 計算顯著性 + 更新神經化學（使用 LLM 評估結果）─────────
         signals = SalienceSignals(

@@ -782,26 +782,9 @@ async def openai_chat_completions(req: OpenAIChatCompletionRequest) -> Any:
     if not user_input:
         user_input = "（繼續對話）"
 
-    # 固定 Session 讓 OpenClaw 背景工作能延續上下文
+    # 🔗 [新機制] 固定 Session 與獲取工具資訊（供串流與非串流共享）
     session = _get_or_create_session("openclaw-main-brain")
-
-    try:
-        agent.reload_soul()
-        tools_dict = [t.model_dump(exclude_none=True) for t in req.tools] if req.tools else None
-        response = agent.chat(user_input, session, tools=tools_dict)
-    except Exception as exc:
-        logger.exception("[/v1/chat/completions] 處理失敗")
-        raise HTTPException(status_code=500, detail=str(exc))
-
-    tc_list = None
-    if response.tool_calls:
-        tc_list = [OpenAIToolCall(**tc) for tc in response.tool_calls]
-
-    resp_msg = OpenAIChoiceMessage(
-        role="assistant",
-        content=response.text,
-        tool_calls=tc_list
-    )
+    tools_dict = [t.model_dump(exclude_none=True) for t in req.tools] if req.tools else None
 
     import json as _json
 
@@ -818,13 +801,36 @@ async def openai_chat_completions(req: OpenAIChatCompletionRequest) -> Any:
                 "choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": None}]
             }) + "\n\n"
 
-            # Chunk 2: content（一次全送，不切片）
-            content_delta: dict[str, Any] = {"content": response.text or ""}
-            if tc_list:
+            # 🆕 [效能優化] 異步執行 Agent.chat 並提供 Keep-alive 心跳
+            # 使用 executor 避免阻塞 FastAPI 事件迴圈，同時每 2 秒發送一個 SSE 註釋以防 TG/Gateway 超時
+            import asyncio
+            loop = asyncio.get_event_loop()
+            chat_task = loop.run_in_executor(None, agent.chat, user_input, session, tools_dict)
+            
+            while not chat_task.done():
+                # 發送 SSE 註釋作為心跳（大多數客戶端會忽略，但能保持 TCP 連線）
+                yield ": heartbeat\n\n"
+                await asyncio.sleep(2)
+            
+            try:
+                final_response = await chat_task
+            except Exception as e:
+                logger.exception("[SSE] Agent 執行異常")
+                yield "data: " + _json.dumps({"error": {"message": str(e)}}) + "\n\n"
+                yield "data: [DONE]\n\n"
+                return
+
+            final_tc_list = None
+            if final_response.tool_calls:
+                final_tc_list = [OpenAIToolCall(**tc) for tc in final_response.tool_calls]
+
+            # Chunk 2: content（一次全送，目前 Agent 尚未支援內部 Token 級串流）
+            content_delta: dict[str, Any] = {"content": final_response.text or ""}
+            if final_tc_list:
                 content_delta["tool_calls"] = [
                     {"index": i, "id": tc.id, "type": "function",
                      "function": {"name": tc.function.name, "arguments": tc.function.arguments}}
-                    for i, tc in enumerate(tc_list)
+                    for i, tc in enumerate(final_tc_list)
                 ]
             yield "data: " + _json.dumps({
                 "id": chunk_id, "object": "chat.completion.chunk",
@@ -836,14 +842,31 @@ async def openai_chat_completions(req: OpenAIChatCompletionRequest) -> Any:
             yield "data: " + _json.dumps({
                 "id": chunk_id, "object": "chat.completion.chunk",
                 "created": created_ts, "model": req.model,
-                "choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls" if tc_list else "stop"}]
+                "choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls" if final_tc_list else "stop"}]
             }) + "\n\n"
             yield "data: [DONE]\n\n"
 
-        print(f"--- API (SSE) 回傳給 OpenClaw ---\nContent: {response.text}\nTool Calls: {tc_list}\n---------------------------", flush=True)
         return StreamingResponse(stream_generator(), media_type="text/event-stream")
 
     else:
+        # 非串流模式：同步呼叫並回傳完整內容
+        try:
+            agent.reload_soul()
+            response = agent.chat(user_input, session, tools=tools_dict)
+        except Exception as exc:
+            logger.exception("[/v1/chat/completions] 處理失敗")
+            raise HTTPException(status_code=500, detail=str(exc))
+
+        tc_list = None
+        if response.tool_calls:
+            tc_list = [OpenAIToolCall(**tc) for tc in response.tool_calls]
+
+        resp_msg = OpenAIChoiceMessage(
+            role="assistant",
+            content=response.text,
+            tool_calls=tc_list
+        )
+
         resp_obj = OpenAIChatCompletionResponse(
             id=f"chatcmpl-{uuid.uuid4().hex}",
             created=int(time.time()),
