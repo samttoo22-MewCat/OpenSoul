@@ -11,6 +11,15 @@ services:
       CLAUDE_WEB_SESSION_KEY: ${CLAUDE_WEB_SESSION_KEY:-}
       CLAUDE_WEB_COOKIE: ${CLAUDE_WEB_COOKIE:-}
       TZ: ${TZ:-Asia/Taipei}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-dummy}
+      LLM_PROVIDER: ${LLM_PROVIDER:-custom_openai}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-http://host.docker.internal:6781/v1}
+      MODEL: ${MODEL:-aria}
+      OPENAI_MODEL: ${OPENAI_MODEL:-aria}
+      OPENCLAW_AGENT_MODEL: ${OPENCLAW_AGENT_MODEL:-aria}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-dummy}
+      CUSTOM_OPENAI_API_KEY: ${CUSTOM_OPENAI_API_KEY:-dummy}
+    env_file: .env
     volumes:
       - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
       - ${OPENCLAW_WORKSPACE_DIR}:/home/node/.openclaw/workspace
@@ -71,6 +80,15 @@ services:
       CLAUDE_WEB_SESSION_KEY: ${CLAUDE_WEB_SESSION_KEY:-}
       CLAUDE_WEB_COOKIE: ${CLAUDE_WEB_COOKIE:-}
       TZ: ${TZ:-Asia/Taipei}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-dummy}
+      LLM_PROVIDER: ${LLM_PROVIDER:-custom_openai}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-http://host.docker.internal:6781/v1}
+      MODEL: ${MODEL:-aria}
+      OPENAI_MODEL: ${OPENAI_MODEL:-aria}
+      OPENCLAW_AGENT_MODEL: ${OPENCLAW_AGENT_MODEL:-aria}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-dummy}
+      CUSTOM_OPENAI_API_KEY: ${CUSTOM_OPENAI_API_KEY:-dummy}
+    env_file: .env
     volumes:
       - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
       - ${OPENCLAW_WORKSPACE_DIR}:/home/node/.openclaw/workspace

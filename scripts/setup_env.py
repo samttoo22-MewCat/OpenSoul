@@ -354,6 +354,63 @@ def init_openclaw_config(config_dir: Path) -> None:
         err(f"建立 openclaw.json 失敗：{e}")
 
 
+def fix_openclaw_sessions(config_dir: Path) -> None:
+    """自動修正 OpenClaw Session 配置，確保所有 Session 都導向本地 OpenSoul API。"""
+    agents_dir = config_dir / "agents"
+    if not agents_dir.exists():
+        return
+
+    import json
+
+    def replace_recursive(obj):
+        if isinstance(obj, dict):
+            changed = False
+            for k, v in obj.items():
+                if k == "modelProvider" and v == "anthropic":
+                    obj[k] = "custom_openai"
+                    changed = True
+                elif k == "provider" and v == "anthropic":
+                    obj[k] = "custom_openai"
+                    changed = True
+                elif k == "model" and isinstance(v, str) and ("claude-" in v or v == "anthropic"):
+                    obj[k] = "aria"
+                    changed = True
+                elif k == "modelId" and isinstance(v, str) and ("claude-" in v or v == "anthropic"):
+                    obj[k] = "aria"
+                    changed = True
+                elif isinstance(v, (dict, list)):
+                    if replace_recursive(v):
+                        changed = True
+            return changed
+        elif isinstance(obj, list):
+            changed = False
+            for i, item in enumerate(obj):
+                if isinstance(item, (dict, list)):
+                    if replace_recursive(item):
+                        changed = True
+            return changed
+        return False
+
+    try:
+        for agent_dir in agents_dir.iterdir():
+            if not agent_dir.is_dir():
+                continue
+            
+            sessions_file = agent_dir / "sessions" / "sessions.json"
+            if not sessions_file.exists():
+                continue
+
+            try:
+                data = json.loads(sessions_file.read_text(encoding="utf-8"))
+                if replace_recursive(data):
+                    sessions_file.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+                    info(f"已深度修正 OpenClaw Session 配置：{agent_dir.name}/sessions.json")
+            except Exception as e:
+                warn(f"處理 {sessions_file} 時發生錯誤: {e}")
+    except Exception as e:
+        warn(f"自動修正 sessions.json 過程發生異常：{e}")
+
+
 def fix_openclaw_config(config_dir: Path) -> None:
     """
     自動修正 OpenClaw 設定檔中的常見問題與記憶層配置。
@@ -392,19 +449,158 @@ def fix_openclaw_config(config_dir: Path) -> None:
             changed = True
 
         # 4. 同步 Telegram 允許列表
-        telegram = gateway.get("telegram", {})
+        # 注意：Telegram 設定應位於 channels.telegram，而非 gateway.telegram
+        channels = data.get("channels", {})
+        if not isinstance(channels, dict): channels = {}
+        data["channels"] = channels # 確保存在
+        
+        telegram = channels.get("telegram", {})
+        if not isinstance(telegram, dict): telegram = {}
+        
         current_allow = telegram.get("allowFrom", [])
         env_allow = get_telegram_allow_list()
-        if current_allow != env_allow:
-            info(f"更新 Telegram 允許列表: {env_allow}")
-            if "telegram" not in gateway:
-                gateway["telegram"] = {"groupPolicy": "allowlist"}
-            gateway["telegram"]["allowFrom"] = env_allow
+        # 轉換為字串列表進行比較，確保一致性
+        env_allow_str = [str(i) for i in env_allow]
+        current_allow_str = [str(i) for i in current_allow]
+        
+        if current_allow_str != env_allow_str or telegram.get("dmPolicy") != "pairing":
+            info(f"更新 Telegram 頻道設定...")
+            if "telegram" not in channels or not isinstance(channels["telegram"], dict):
+                channels["telegram"] = {"enabled": True}
+            
+            # 使用 pairing 政策配合 allowFrom (字串格式)
+            channels["telegram"].update({
+                "groupPolicy": "allowlist",
+                "dmPolicy": "pairing",
+                "allowFrom": env_allow_str
+            })
+            changed = True
+        
+        # 🆕 同步 Gateway Token 到 openclaw/.env 以免不一致
+        root_env = PROJECT_ROOT / ".env"
+        oc_env = PROJECT_ROOT / "openclaw" / ".env"
+        if root_env.exists() and oc_env.exists():
+            root_text = root_env.read_text(encoding="utf-8")
+            oc_text = oc_env.read_text(encoding="utf-8")
+            
+            token = None
+            for line in root_text.splitlines():
+                if line.startswith("OPENCLAW_GATEWAY_TOKEN="):
+                    token = line.split("=", 1)[1].strip()
+                    break
+            
+            if token:
+                new_oc_lines = []
+                token_found = False
+                for line in oc_text.splitlines():
+                    if line.startswith("OPENCLAW_GATEWAY_TOKEN="):
+                        new_oc_lines.append(f"OPENCLAW_GATEWAY_TOKEN={token}")
+                        token_found = True
+                    else:
+                        new_oc_lines.append(line)
+                
+                if not token_found:
+                    new_oc_lines.append(f"OPENCLAW_GATEWAY_TOKEN={token}")
+                
+                new_oc_text = "\n".join(new_oc_lines)
+                if new_oc_text != oc_text:
+                    oc_env.write_text(new_oc_text, encoding="utf-8")
+                    info("同步 OPENCLAW_GATEWAY_TOKEN 至 openclaw/.env")
+        
+        # 移除錯誤路徑（如果存在）
+        if "gateway" in data and isinstance(data["gateway"], dict) and "telegram" in data["gateway"]:
+            del data["gateway"]["telegram"]
+            changed = True
+
+        # 🆕 強制設定預設模型 Provider，防止 OpenClaw 自動回退到 Anthropic/Claude
+        agents = data.get("agents", {})
+        if not isinstance(agents, dict): agents = {}
+        data["agents"] = agents
+        
+        defaults = agents.get("defaults", {})
+        if not isinstance(defaults, dict): defaults = {}
+        agents["defaults"] = defaults
+        
+        model_defaults = defaults.get("model", {})
+        if not isinstance(model_defaults, dict): model_defaults = {}
+        defaults["model"] = model_defaults
+        
+        primary = model_defaults.get("primary", {})
+        if not isinstance(primary, dict): primary = {}
+        
+        # 取得當前環境變數或預設值
+        target_provider = os.environ.get("LLM_PROVIDER", "custom_openai")
+        target_model = os.environ.get("MODEL", "aria")
+        target_full_id = f"{target_provider}/{target_model}"
+
+        # 🆕 建立/更新 Auth Profiles 確保 API Key 存在
+        auth_file = config_dir / "agents" / "main" / "agent" / "auth-profiles.json"
+        auth_file.parent.mkdir(parents=True, exist_ok=True)
+        
+        auth_data = {}
+        if auth_file.exists():
+            try:
+                auth_data = json.loads(auth_file.read_text(encoding="utf-8"))
+            except Exception: pass
+            
+        if not isinstance(auth_data, dict): auth_data = {}
+        
+        # 確保有多種可能的 key 名稱 (OpenClaw 不同版本對自定義 provider 的 key 命名規則可能不同)
+        needs_update = False
+        for k in ["custom_openai", "openai", "openai-completions"]:
+            if auth_data.get(k) != "dummy":
+                auth_data[k] = "dummy"
+                needs_update = True
+                
+        if needs_update:
+            info("建立/更新 OpenClaw Auth Profile (多重 Key 備援)...")
+            auth_file.write_text(json.dumps(auth_data, indent=2), encoding="utf-8")
+
+        # 🆕 真正的模型型錄註冊方式 (OpenClaw 2026.3+)
+        # 移除錯誤的 agents.models
+        if "models" in agents:
+            del agents["models"]
+            changed = True
+
+        models_root = data.get("models", {})
+        if not isinstance(models_root, dict): models_root = {}
+        data["models"] = models_root
+        
+        providers = models_root.get("providers", {})
+        if not isinstance(providers, dict): providers = {}
+        models_root["providers"] = providers
+        
+        if target_provider not in providers:
+            info(f"在型錄中註冊 Provider: {target_provider}")
+            providers[target_provider] = {
+                "baseUrl": os.environ.get("OPENAI_BASE_URL", "http://host.docker.internal:6781/v1"),
+                "api": "openai-completions",
+                "apiKey": "dummy",
+                "models": [
+                    {
+                        "id": target_model,
+                        "name": f"ARIA ({target_provider})",
+                        "contextWindow": 128000
+                    }
+                ]
+            }
+            changed = True
+        elif "apiKey" not in providers[target_provider] or providers[target_provider]["apiKey"] != "dummy":
+            # 🆕 強化認證：即使 Provider 已存在，也確保有 apiKey
+            providers[target_provider]["apiKey"] = "dummy"
+            changed = True
+
+        if primary != target_full_id:
+            info(f"強制更新 OpenClaw 預設模型為 {target_full_id}...")
+            model_defaults["primary"] = target_full_id
             changed = True
 
         if changed:
             config_file.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
             ok("OpenClaw 配置檔已自動更新（包含 Telegram 允許列表）。")
+            
+        # 🆕 同步修正所有 Agent 的 Session 配置，防止 401 錯誤導向 Anthropic
+        fix_openclaw_sessions(config_dir)
     except Exception as e:
         warn(f"嘗試自動修正 openclaw.json 時發生錯誤（跳過）：{e}")
 
@@ -444,12 +640,22 @@ def get_telegram_allow_list() -> list[int]:
     allow_str = os.environ.get("TELEGRAM_ALLOW_FROM")
     
     if not allow_str:
+        # 嘗試從根目錄 .env 讀取
         env_file = PROJECT_ROOT / ".env"
         if env_file.exists():
             for line in env_file.read_text(encoding="utf-8").splitlines():
                 if line.startswith("TELEGRAM_ALLOW_FROM="):
                     allow_str = line.split("=", 1)[1].strip()
                     break
+        
+        # 嘗試從 openclaw/.env 讀取 (備援)
+        if not allow_str:
+            oc_env = PROJECT_ROOT / "openclaw" / ".env"
+            if oc_env.exists():
+                for line in oc_env.read_text(encoding="utf-8").splitlines():
+                    if line.startswith("TELEGRAM_ALLOW_FROM="):
+                        allow_str = line.split("=", 1)[1].strip()
+                        break
     
     if not allow_str:
         return [114514] # 預設值
@@ -529,7 +735,7 @@ def wait_for_soul_api(port: int, timeout: int = 30) -> bool:
     while time.time() - start < timeout:
         try:
             import urllib.request
-            response = urllib.request.urlopen(f"http://localhost:{port}/health", timeout=2)
+            response = urllib.request.urlopen(f"http://127.0.0.1:{port}/health", timeout=3)
             if response.status == 200:
                 return True
         except Exception:
@@ -545,7 +751,7 @@ def is_soul_api_running(port: int) -> bool:
     """
     try:
         import urllib.request
-        response = urllib.request.urlopen(f"http://localhost:{port}/health", timeout=2)
+        response = urllib.request.urlopen(f"http://127.0.0.1:{port}/health", timeout=3)
         return response.status == 200
     except Exception:
         return False
@@ -601,20 +807,8 @@ def run_openclaw_doctor(compose_cmd: list[str], openclaw_dir: Path, env: dict) -
     info("跳過 openclaw doctor --fix（容器暫時不可用，配置已由本機 fix_openclaw_config 處理）。")
 
 
-def get_openclaw_env() -> dict[str, str]:
-    """產出一致的 OpenClaw Docker 環境變數。"""
-    env = os.environ.copy()
-    openclaw_dir = PROJECT_ROOT / "openclaw"
-
-    config_dir = Path.home() / ".openclaw"
-    workspace_dir = PROJECT_ROOT / "workspace"
-    project_skills_dir = openclaw_dir / "skills"
-
-    config_dir.mkdir(parents=True, exist_ok=True)
-    workspace_dir.mkdir(parents=True, exist_ok=True)
-
-    # 執行自動修復邏輯
-    fix_openclaw_config(config_dir)
+    # （此處第一份定義已移除，統一使用後方的定義）
+    pass
 
 def sync_directory(src: Path, dst: Path) -> bool:
     """
@@ -669,6 +863,7 @@ def get_openclaw_env() -> dict[str, str]:
     workspace_dir.mkdir(parents=True, exist_ok=True)
 
     # 🆕 自動修正 openclaw/.env 中的 OPENAI_BASE_URL（Windows 配置糾正）
+    # 這裡會確保 openclaw/.env 存在且內容正確
     fix_openclaw_base_url()
 
     # 🆕 初始化或修複 openclaw.json（禁用本地記憶層，使用 openSOUL）
@@ -721,8 +916,24 @@ def get_openclaw_env() -> dict[str, str]:
     env["OPENCLAW_GATEWAY_BIND"] = "lan"
     env["SOUL_PROJECT_ROOT"] = PROJECT_ROOT.absolute().as_posix()
 
-    # 🆕 設置 UTF-8 編碼，防止 Windows cp950 編碼錯誤（尤其是 OpenClaw doctor 命令）
+    # 🆕 設置 UTF-8 編碼
     env["PYTHONIOENCODING"] = "utf-8"
+
+    # 🆕 注入 API 位址與佔位符 Key (OpenClaw 內部檢查必需)
+    # 使用多個變數名稱確保覆蓋不同版本的 OpenClaw 與 Agent 配置
+    env["OPENAI_API_KEY"] = "dummy"
+    env["LLM_PROVIDER"] = "custom_openai"
+    env["OPENAI_BASE_URL"] = "http://host.docker.internal:6781/v1"
+    env["MODEL"] = "aria"
+    env["OPENAI_MODEL"] = "aria"
+    env["OPENCLAW_AGENT_MODEL"] = "aria"
+    
+    # 預防性注入，防止 OpenClaw 偵測到 Anthropic 模型時報錯（即便我們想用的是 ARIA）
+    env["ANTHROPIC_API_KEY"] = "dummy"
+    env["GEMINI_API_KEY"] = "dummy"
+    
+    # 🆕 注入 Provider 特定的 API Key 環境變數（高優先權，解決 No API key found）
+    env["CUSTOM_OPENAI_API_KEY"] = "dummy"
 
     return env
 
@@ -732,8 +943,25 @@ def get_openclaw_env() -> dict[str, str]:
 def action_start(compose_cmd: list[str]) -> None:
     """啟動 FalkorDB 容器與 OpenClaw 容器。"""
     system, arch = detect_environment()
+    
+    # 🆕 啟動前先嘗試停止容器，釋放檔案鎖，防止 OpenClaw 覆寫配置
+    info("正在準備環境（嘗試停止現有服務以套用配置）…")
+    try:
+        subprocess.run(
+            compose_cmd + ["-f", str(COMPOSE_FILE), "stop"],
+            cwd=PROJECT_ROOT, capture_output=True, check=False
+        )
+        openclaw_dir_check = PROJECT_ROOT / "openclaw"
+        if openclaw_dir_check.exists():
+            subprocess.run(
+                compose_cmd + ["-f", "docker-compose.yml", "stop"],
+                cwd=openclaw_dir_check, capture_output=True, check=False
+            )
+    except Exception:
+        pass
+
     info("啟動 FalkorDB 容器…")
-    env = get_openclaw_env() # 共用環境資訊
+    env = get_openclaw_env() # 共用環境資訊（內含修復邏輯）
 
     # 🆕 強化環境變數同步：將關鍵變數寫入 .env 文件，使 docker-compose 能讀取
     # 確保 Judge 在 Docker 容器中與原生 API 能共享配置
@@ -750,7 +978,10 @@ def action_start(compose_cmd: list[str]) -> None:
             "OPENCLAW_WORKSPACE_DIR", 
             "OPENCLAW_GATEWAY_TOKEN",
             "SOUL_PROJECT_ROOT",
-            "TELEGRAM_ALLOW_FROM"
+            "TELEGRAM_ALLOW_FROM",
+            "TELEGRAM_BOT_TOKEN",
+            "CUSTOM_OPENAI_API_KEY",
+            "OPENAI_API_KEY"
         ]
         
         updated = False
@@ -919,9 +1150,6 @@ def action_start(compose_cmd: list[str]) -> None:
                 check=True,
             )
             ok("OpenClaw 已就緒！")
-
-            # ── 自動執行 openclaw doctor --fix（修正 openclaw.json 廢棄鍵）──
-            run_openclaw_doctor(compose_cmd, openclaw_dir, env)
 
         except subprocess.CalledProcessError as exc:
             err(f"OpenClaw 啟動失敗：{exc}")
