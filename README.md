@@ -176,6 +176,9 @@ openSOUL 支持多種 LLM 提供者和 Embedding 模型的靈活組合：
 
   **✨ 優勢**：不需要重複配置 Telegram Bot，直接使用 OpenClaw 已有的 Bot
 
+**Telegram 允許列表**：
+- `TELEGRAM_ALLOW_FROM=114514` # 您的 User ID，多個以逗號分隔
+
 詳細的所有配置選項請參見 `.env.example` 中的註釋說明。
 
 #### 🔐 OpenClaw 技能集成配置
@@ -190,10 +193,18 @@ cp .env.example .env
 **關鍵設置**：
 - `OPENCLAW_GATEWAY_TOKEN`: Gateway 認證令牌（安全通信）
 - `TELEGRAM_BOT_TOKEN`: 若要使用 Telegram 通道（可選）
+- `TELEGRAM_ALLOW_FROM`: 允許訪問 Bot 的 Telegram User ID 列表（多個 ID 用逗號分隔，例如 `123456,789012`）
 - `OPENCLAW_CONFIG_DIR`: OpenClaw 配置目錄路徑
 - `OPENCLAW_WORKSPACE_DIR`: OpenClaw 工作區（應指向主 workspace）
 
+> [!TIP]
+> **如何獲取 Telegram User ID？**
+> 1. 在 Telegram 搜尋並啟動 `@userinfobot` 或 `@getidsbot`。
+> 2. 發送任何訊息給該 Bot，它會回傳您的 `Id`（一串數字）。
+> 3. 將該數字填入 `.env` 中的 `TELEGRAM_ALLOW_FROM` 即可。
+
 詳見 `openclaw/.env.example` 中的完整選項。
+
 
 ### 步驟 3：運行環境設定腳本
 執行 `scripts/setup_env.py`。該腳本會自動檢查依賴、同步技能並啟動 Docker 服務：
@@ -223,9 +234,8 @@ python scripts/setup_env.py --status
 ### 步驟 4：開始使用
 腳本啟動後，您可以透過以下方式與 OpenSoul 交互：
 
-- **Web UI**: 訪問 `http://localhost:8002` ← 推薦新手使用
-- **API**: 直接調用 `http://localhost:8001` 的 REST 接口
-- **WebSocket**: 實時連接到 `ws://localhost:8001/ws`
+- **Web UI + API**: 訪問 `http://localhost:6781` ← 推薦新手使用（預設 port，可透過 `SOUL_API_PORT` 調整）
+- **WebSocket**: 實時連接到 `ws://localhost:6781/ws`
 
 ---
 
@@ -432,7 +442,7 @@ OpenSoul 提供完整的 Web 界面，支援以下功能：
 
 **在 Web UI 中編輯**
 1. 啟動 OpenSoul：`python scripts/setup_env.py`
-2. 訪問 Web UI：`http://localhost:8002`
+2. 訪問 Web UI：`http://localhost:6781`
 3. 在聊天框輸入：`/soul`
 4. 直接在 Web 介面中查看和編輯人格設定
 5. 修改會自動保存到 `workspace/SOUL.md`

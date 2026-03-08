@@ -232,7 +232,7 @@ def check_port(host: str, port: int) -> bool:
         return False
 
 
-def cleanup_api_port(port: int = 8002, timeout: int = 5) -> None:
+def cleanup_api_port(port: int = 6781, timeout: int = 5) -> None:
     """
     檢查 API 端口是否被佔用。
 
@@ -253,6 +253,67 @@ def cleanup_api_port(port: int = 8002, timeout: int = 5) -> None:
     # 改為提示用戶手動清理
 
 
+def fix_openclaw_base_url() -> None:
+    """
+    自動修正 openclaw/.env 中的 OPENAI_BASE_URL。
+
+    根據作業系統自動更新為正確的配置：
+    - Windows/macOS: http://host.docker.internal:{port}/v1
+    - Linux/Raspberry Pi: http://172.17.0.1:{port}/v1
+    """
+    openclaw_env_file = PROJECT_ROOT / "openclaw" / ".env"
+    if not openclaw_env_file.exists():
+        return
+
+    content = openclaw_env_file.read_text(encoding="utf-8")
+    lines = content.splitlines(keepends=False)
+    changed = False
+    system = platform.system()
+    soul_api_port = get_soul_api_port()
+
+    # 根據系統決定正確的 Docker host 地址
+    if system in ("Windows", "Darwin"):
+        correct_docker_host = "host.docker.internal"
+        wrong_docker_host = "172.17.0.1"
+    else:
+        correct_docker_host = "172.17.0.1"
+        wrong_docker_host = "host.docker.internal"
+
+    import re
+
+    # 检查并修正每一行
+    for i, line in enumerate(lines):
+        if line.strip().startswith("OPENAI_BASE_URL=") and not line.strip().startswith("#"):
+            original_url = line.split("=", 1)[1].strip()
+            fixed_url = original_url
+
+            # 如果使用了錯誤的 Docker host，替換為正確的
+            if wrong_docker_host in original_url:
+                fixed_url = fixed_url.replace(wrong_docker_host, correct_docker_host)
+                warn(f"⚠️  檢測到系統配置錯誤！")
+                warn(f"   系統: {system} → 應使用 {correct_docker_host}")
+                warn(f"   原配置：{original_url}")
+                changed = True
+
+            # 确保端口与 Soul API 一致
+            port_match = re.search(r":(\d+)/", fixed_url)
+            if port_match:
+                url_port = int(port_match.group(1))
+                if url_port != soul_api_port:
+                    fixed_url = re.sub(r":\d+/", f":{soul_api_port}/", fixed_url)
+                    warn(f"⚠️  端口不匹配！")
+                    warn(f"   Soul API 運行在 port {soul_api_port}")
+                    changed = True
+
+            if changed:
+                warn(f"   已修正為：{fixed_url}")
+                lines[i] = f"OPENAI_BASE_URL={fixed_url}"
+
+    if changed:
+        openclaw_env_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        ok("✓ openclaw/.env 已自動修正（OPENAI_BASE_URL）")
+
+
 def init_openclaw_config(config_dir: Path) -> None:
     """
     初始化 openclaw.json（如不存在）。
@@ -269,36 +330,26 @@ def init_openclaw_config(config_dir: Path) -> None:
         return
 
     try:
-        # 根據 OpenClaw 官方文檔建立配置
-        # 禁用 OpenClaw 本地 Markdown 記憶（memory/YYYY-MM-DD.md），依賴 openSOUL FalkorDB
+        # 根據 OpenClaw 官方文檔建立最小化配置
+        # 注意：memorySearch、contextPruning、compaction 在新版 OpenClaw 中已廢棄
+        # 不要在 openclaw.json 中設置這些鍵，否則會觸發 "Invalid config" 錯誤
         config = {
             "gateway": {
-                "bind": "lan",      # 跨平台綁定模式
-                "port": 3410
-            },
-            # 禁用 OpenClaw 的 Markdown 記憶檔案系統
-            "memorySearch": {
-                "enabled": False    # 禁用本地記憶搜尋（改用 openSOUL FalkorDB）
-            },
-            # 禁用上下文修剪（OpenClaw 內部緩存）
-            "contextPruning": {
-                "enabled": False    # 禁用 OpenClaw 的上下文修剪機制
-            },
-            # 禁用記憶壓縮與刷新（memoryFlush）
-            "compaction": {
-                "memoryFlush": {
-                    "enabled": False # 禁用 Markdown diary 自動儲存
+                "bind": "lan",      # 跨平台綁定模式（lan = 允許局域網訪問）
+                "memory": {
+                    "enabled": false,
+                    "memoryFlush": false
+                },
+                "telegram": {
+                    "groupPolicy": "allowlist",
+                    "allowFrom": get_telegram_allow_list()
                 }
             }
         }
 
         config_file.write_text(json.dumps(config, indent=2, ensure_ascii=False), encoding="utf-8")
         ok(f"✓ 已建立 openclaw.json 於 {config_file}")
-        info("   配置詳情：")
-        info("   • memorySearch.enabled = false    （禁用本地記憶檔案）")
-        info("   • contextPruning.enabled = false  （禁用 OpenClaw 緩存）")
-        info("   • compaction.memoryFlush.enabled = false （禁用 Markdown diary）")
-        info("   ✓ 所有記憶全數依賴 openSOUL 的 FalkorDB 系統")
+        info("   最小化配置：gateway.bind = lan（允許跨裝置存取）")
     except Exception as e:
         err(f"建立 openclaw.json 失敗：{e}")
 
@@ -325,57 +376,246 @@ def fix_openclaw_config(config_dir: Path) -> None:
             gateway["bind"] = "lan"
             changed = True
 
-        # 2. 確保禁用 OpenClaw 記憶搜尋（使用 openSOUL 的 FalkorDB）
-        memory_search = data.get("memorySearch", {})
-        if memory_search.get("enabled", True) != False:
-            info("禁用 OpenClaw memorySearch → 全部使用 openSOUL FalkorDB")
-            data["memorySearch"] = {"enabled": False}
-            changed = True
+        # 2. 移除已廢棄的設定鍵（這些鍵在新版 OpenClaw 中已不支援）
+        # ⚠️ 不要設定為 false，而是要完全移除！否則會觸發 "Invalid config" 錯誤
+        deprecated_keys = ["memorySearch", "contextPruning", "compaction"]
+        for deprecated_key in deprecated_keys:
+            if deprecated_key in data:
+                info(f"移除已廢棄的設定鍵：{deprecated_key}（新版 OpenClaw 不支援此鍵）")
+                del data[deprecated_key]
+                changed = True
 
-        # 3. 禁用 OpenClaw 上下文修剪（避免內部緩存）
-        context_pruning = data.get("contextPruning", {})
-        if context_pruning.get("enabled", True) != False:
-            info("禁用 OpenClaw contextPruning（內部快取機制）")
-            data["contextPruning"] = {"enabled": False}
-            changed = True
-
-        # 4. 禁用記憶壓縮與 Markdown diary（避免本地記憶文件）
-        compaction = data.get("compaction", {})
-        memory_flush = compaction.get("memoryFlush", {})
-        if memory_flush.get("enabled", True) != False:
-            info("禁用 OpenClaw memoryFlush（Markdown diary 記憶）")
-            compaction["memoryFlush"] = {"enabled": False}
-            data["compaction"] = compaction
-            changed = True
-
-        # 5. 移除不支援的 version 欄位
+        # 3. 移除不支援的 version 欄位
         if "version" in data:
             info("移除 openclaw.json 中不支援的 'version' 欄位。")
             del data["version"]
             changed = True
 
+        # 4. 同步 Telegram 允許列表
+        telegram = gateway.get("telegram", {})
+        current_allow = telegram.get("allowFrom", [])
+        env_allow = get_telegram_allow_list()
+        if current_allow != env_allow:
+            info(f"更新 Telegram 允許列表: {env_allow}")
+            if "telegram" not in gateway:
+                gateway["telegram"] = {"groupPolicy": "allowlist"}
+            gateway["telegram"]["allowFrom"] = env_allow
+            changed = True
+
         if changed:
             config_file.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
-            ok("OpenClaw 配置檔已自動更新（禁用本地記憶層）。")
+            ok("OpenClaw 配置檔已自動更新（包含 Telegram 允許列表）。")
     except Exception as e:
         warn(f"嘗試自動修正 openclaw.json 時發生錯誤（跳過）：{e}")
+
+
+def get_soul_api_port() -> int:
+    """
+    從環境變數或 .env 文件讀取 Soul API 端口。
+    優先順序：進程環境變數 > .env 文件 > 預設值（6781）
+    """
+    # 先檢查進程環境變數
+    port_str = os.environ.get("SOUL_API_PORT")
+    if port_str:
+        try:
+            return int(port_str)
+        except ValueError:
+            pass
+
+    # 從 .env 文件讀取
+    env_file = PROJECT_ROOT / ".env"
+    if env_file.exists():
+        for line in env_file.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line.startswith("SOUL_API_PORT=") and not line.startswith("#"):
+                try:
+                    return int(line.split("=", 1)[1].strip())
+                except ValueError:
+                    pass
+
+    return 6781  # 預設值（與 openclaw/.env.example 的 OPENAI_BASE_URL port 一致）
+
+
+def get_telegram_allow_list() -> list[int]:
+    """
+    從環境變數或 .env 文件讀取 Telegram 允許列表。
+    回傳整數列表。
+    """
+    allow_str = os.environ.get("TELEGRAM_ALLOW_FROM")
+    
+    if not allow_str:
+        env_file = PROJECT_ROOT / ".env"
+        if env_file.exists():
+            for line in env_file.read_text(encoding="utf-8").splitlines():
+                if line.startswith("TELEGRAM_ALLOW_FROM="):
+                    allow_str = line.split("=", 1)[1].strip()
+                    break
+    
+    if not allow_str:
+        return [114514] # 預設值
+        
+    try:
+        # 支援逗號分隔，例如 "123,456"
+        return [int(x.strip()) for x in allow_str.split(",") if x.strip()]
+    except ValueError:
+        warn(f"TELEGRAM_ALLOW_FROM 格式錯誤：{allow_str}，回退至預設值。")
+        return [114514]
+
+
+def check_openclaw_base_url() -> None:
+    """
+    檢查 openclaw/.env 中的 OPENAI_BASE_URL 設定。
+    - 若使用 127.0.0.1 或 localhost，則警告（Docker 內部無法訪問主機）
+    - 若指向的 port 與 Soul API port 不符，則警告
+    """
+    openclaw_env_file = PROJECT_ROOT / "openclaw" / ".env"
+    if not openclaw_env_file.exists():
+        return
+
+    soul_api_port = get_soul_api_port()
+
+    for line in openclaw_env_file.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line.startswith("OPENAI_BASE_URL=") and not line.startswith("#"):
+            url = line.split("=", 1)[1].strip()
+
+            # 檢查是否使用了 127.0.0.1 或 localhost（Docker 內無法訪問主機）
+            if "127.0.0.1" in url or "//localhost" in url:
+                warn("━" * 60)
+                warn(f"⚠️  OPENAI_BASE_URL 使用了 127.0.0.1/localhost！")
+                warn(f"   當前設定：{url}")
+                warn(f"   ❌ 問題：OpenClaw 在 Docker 容器內，127.0.0.1 指向容器自身，")
+                warn(f"          不是您的主機，Soul API 無法被訪問！")
+                system = platform.system()
+                if system in ("Windows", "Darwin"):
+                    warn(f"   ✅ 建議改為：OPENAI_BASE_URL=http://host.docker.internal:{soul_api_port}/v1")
+                else:
+                    try:
+                        result = subprocess.run(
+                            ["hostname", "-I"], capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=3
+                        )
+                        host_ip = result.stdout.strip().split()[0] if result.stdout.strip() else "YOUR_HOST_IP"
+                    except Exception:
+                        host_ip = "YOUR_HOST_IP"
+                    warn(f"   ✅ 建議改為：OPENAI_BASE_URL=http://{host_ip}:{soul_api_port}/v1")
+                warn(f"   請修改 openclaw/.env 後重新啟動。")
+                warn("━" * 60)
+
+            # 檢查 port 是否與 Soul API 一致
+            import re
+            port_match = re.search(r":(\d+)/", url)
+            if port_match:
+                url_port = int(port_match.group(1))
+                if url_port != soul_api_port:
+                    warn("━" * 60)
+                    warn(f"⚠️  OPENAI_BASE_URL 的端口 ({url_port}) 與 Soul API 端口 ({soul_api_port}) 不符！")
+                    warn(f"   當前設定：{url}")
+                    warn(f"   Soul API 將啟動在 port {soul_api_port}（由 SOUL_API_PORT 決定）")
+                    # 自動修正建議
+                    fixed_url = re.sub(r":\d+/", f":{soul_api_port}/", url)
+                    warn(f"   ✅ 建議改為：OPENAI_BASE_URL={fixed_url}")
+                    warn("━" * 60)
+            break
+
+
+def wait_for_soul_api(port: int, timeout: int = 30) -> bool:
+    """
+    等待 Soul API 在指定端口就緒。
+    使用 HTTP /health endpoint 驗證（確保是真的 Soul API，不是其他程序）。
+    最多等待 timeout 秒。
+    """
+    info(f"等待 Soul API 就緒（port {port}，最多 {timeout}s）…")
+    start = time.time()
+    while time.time() - start < timeout:
+        try:
+            import urllib.request
+            response = urllib.request.urlopen(f"http://localhost:{port}/health", timeout=2)
+            if response.status == 200:
+                return True
+        except Exception:
+            pass
+        time.sleep(1)
+    return False
+
+
+def is_soul_api_running(port: int) -> bool:
+    """
+    檢查 Soul API 是否真的在指定 port 運行。
+    不只檢查 TCP 連通性，還驗證 /health endpoint（確保是 Soul API，不是其他程序）。
+    """
+    try:
+        import urllib.request
+        response = urllib.request.urlopen(f"http://localhost:{port}/health", timeout=2)
+        return response.status == 200
+    except Exception:
+        return False
+
+
+def run_openclaw_doctor(compose_cmd: list[str], openclaw_dir: Path, env: dict) -> None:
+    """
+    在 OpenClaw 容器內執行 'openclaw doctor --fix' 以自動修正配置問題。
+    這能解決 openclaw.json 版本過舊、廢棄鍵等常見問題。
+
+    嘗試順序：
+    1. openclaw-gateway（通常是長駐服務，最可靠）
+    2. openclaw-cli（若 gateway 不支援則試此服務）
+    若兩者都失敗，靜默跳過（不阻擋正常啟動）。
+    """
+    info("執行 openclaw doctor --fix（自動修正 openclaw.json 配置）…")
+    # 等待容器穩定（避免 container 剛起來 openclaw binary 還沒就緒）
+    time.sleep(3)
+
+    # 嘗試的 service name 列表（按優先順序）
+    services_to_try = ["openclaw-gateway", "openclaw-cli"]
+
+    for service in services_to_try:
+        try:
+            result = subprocess.run(
+                compose_cmd + ["-f", "docker-compose.yml", "exec", "-T", service,
+                               "openclaw", "doctor", "--fix"],
+                cwd=openclaw_dir,
+                env=env,
+                capture_output=True,
+                text=True,
+                encoding='utf-8',
+                errors='replace',
+                timeout=30,
+            )
+            if result.returncode == 0:
+                ok(f"openclaw doctor --fix 執行成功（via {service}），配置已是最新版。")
+                return
+            elif "is not running" in result.stderr or "no such service" in result.stderr.lower():
+                # 該服務未啟動，試下一個
+                continue
+            else:
+                # 其他錯誤 - 可能 doctor 不支援或已是最新，靜默繼續
+                ok(f"openclaw.json 配置已是最新版（doctor 回報：{result.stderr.strip()[:100]}）")
+                return
+        except subprocess.TimeoutExpired:
+            warn(f"openclaw doctor --fix 在 {service} 上逾時（跳過）。")
+            return
+        except Exception:
+            continue
+
+    # 所有服務都失敗或未啟動，靜默跳過
+    info("跳過 openclaw doctor --fix（容器暫時不可用，配置已由本機 fix_openclaw_config 處理）。")
 
 
 def get_openclaw_env() -> dict[str, str]:
     """產出一致的 OpenClaw Docker 環境變數。"""
     env = os.environ.copy()
     openclaw_dir = PROJECT_ROOT / "openclaw"
-    
+
     config_dir = Path.home() / ".openclaw"
     workspace_dir = PROJECT_ROOT / "workspace"
     project_skills_dir = openclaw_dir / "skills"
-    
+
     config_dir.mkdir(parents=True, exist_ok=True)
     workspace_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # 執行自動修復邏輯
     fix_openclaw_config(config_dir)
-    
+
 def sync_directory(src: Path, dst: Path) -> bool:
     """
     通用路徑同步函數。
@@ -428,6 +668,9 @@ def get_openclaw_env() -> dict[str, str]:
     config_dir.mkdir(parents=True, exist_ok=True)
     workspace_dir.mkdir(parents=True, exist_ok=True)
 
+    # 🆕 自動修正 openclaw/.env 中的 OPENAI_BASE_URL（Windows 配置糾正）
+    fix_openclaw_base_url()
+
     # 🆕 初始化或修複 openclaw.json（禁用本地記憶層，使用 openSOUL）
     init_openclaw_config(config_dir)
     
@@ -477,7 +720,10 @@ def get_openclaw_env() -> dict[str, str]:
     env["OPENCLAW_WORKSPACE_DIR"] = workspace_dir.absolute().as_posix()
     env["OPENCLAW_GATEWAY_BIND"] = "lan"
     env["SOUL_PROJECT_ROOT"] = PROJECT_ROOT.absolute().as_posix()
-    
+
+    # 🆕 設置 UTF-8 編碼，防止 Windows cp950 編碼錯誤（尤其是 OpenClaw doctor 命令）
+    env["PYTHONIOENCODING"] = "utf-8"
+
     return env
 
 
@@ -503,7 +749,8 @@ def action_start(compose_cmd: list[str]) -> None:
             "OPENCLAW_CONFIG_DIR", 
             "OPENCLAW_WORKSPACE_DIR", 
             "OPENCLAW_GATEWAY_TOKEN",
-            "SOUL_PROJECT_ROOT"
+            "SOUL_PROJECT_ROOT",
+            "TELEGRAM_ALLOW_FROM"
         ]
         
         updated = False
@@ -558,23 +805,90 @@ def action_start(compose_cmd: list[str]) -> None:
         err("請執行 `docker logs opensoul-falkordb` 查看詳細錯誤。")
         sys.exit(1)
 
-    # 啟動 OpenClaw
+    # ── 安裝相依套件 ───────────────────────────────────────────────────────
+    # （先安裝，確保 uvicorn 可用）
+    info("檢查並安裝專案相依套件 (pip install -e .) ...")
+    pip_cmd = [sys.executable, "-m", "pip", "install", "-e", "."]
+
+    # 偵測是否需要 --break-system-packages (針對 Kali/Debian 外部管理環境)
+    if system == "Linux":
+        try:
+            r = subprocess.run([sys.executable, "-m", "pip", "install", "--help"], capture_output=True, text=True, encoding='utf-8')
+            if "--break-system-packages" in r.stdout:
+                info("檢測到 Linux 外部管理環境，自動加入 --break-system-packages")
+                pip_cmd.append("--break-system-packages")
+        except Exception:
+            pass
+
+    try:
+        subprocess.run(pip_cmd, cwd=PROJECT_ROOT, check=True)
+        ok("相依套件安裝完成！")
+    except subprocess.CalledProcessError as exc:
+        err(f"相依套件安裝失敗：{exc}")
+        sys.exit(1)
+
+    # ── 原生啟動 openSOUL API（先啟動，OpenClaw 依賴此服務）───────────────
+    soul_api_port = get_soul_api_port()
+    pid_file = PROJECT_ROOT / ".uvicorn.pid"
+    api_process = None
+
+    if is_soul_api_running(soul_api_port):
+        # 確認 Soul API 確實在運行（不只是 port 被佔用，而是真的有 Soul API） → 複用，不重複啟動
+        ok(f"Soul API 已在 port {soul_api_port} 運行中，跳過重複啟動。")
+    elif check_port("localhost", soul_api_port):
+        # ⚠️ Port 被佔用，但不是 Soul API → 有其他程序在佔用
+        err(f"❌ Port {soul_api_port} 被佔用，但**不是 Soul API**！")
+        err(f"   可能是其他程序在使用此 port。")
+        err(f"   請檢查：netstat -ano | findstr \":{soul_api_port}\"（Windows）")
+        err(f"   或：lsof -i :{soul_api_port}（Linux/macOS）")
+        err(f"   然後手動終止佔用的進程，或改用其他 port（SOUL_API_PORT 環境變數）。")
+        sys.exit(1)
+    else:
+        info(f"原生啟動 openSOUL API（port {soul_api_port}）…")
+        info(f"  ⚡ Soul API 必須先啟動，OpenClaw 才能處理 Telegram / Discord 訊息。")
+
+        env_api = os.environ.copy()
+        env_api["FALKORDB_HOST"] = "localhost"
+        env_api["PYTHONIOENCODING"] = "utf-8"   # 防止 Windows cp950 編碼錯誤
+
+        try:
+            api_process = subprocess.Popen(
+                [sys.executable, "-m", "uvicorn", "soul.interface.api:app",
+                 "--host", "0.0.0.0", "--port", str(soul_api_port)],
+                cwd=PROJECT_ROOT,
+                env=env_api,
+            )
+            pid_file.write_text(str(api_process.pid), encoding="utf-8")
+        except Exception as e:
+            err(f"啟動 Soul API 失敗：{e}")
+            sys.exit(1)
+
+        # 等待 Soul API 就緒（最多 30 秒）
+        if wait_for_soul_api(soul_api_port, timeout=30):
+            ok(f"Soul API 已就緒！（http://localhost:{soul_api_port}）")
+        else:
+            warn(f"Soul API 在 30 秒內未就緒（可能仍在初始化 FalkorDB 連線），繼續啟動其他服務…")
+
+    # ── 啟動前檢查 OpenClaw OPENAI_BASE_URL 設定 ─────────────────────────
+    check_openclaw_base_url()
+
+    # ── 啟動 OpenClaw ─────────────────────────────────────────────────────
     openclaw_dir = PROJECT_ROOT / "openclaw"
     if openclaw_dir.exists() and (openclaw_dir / "docker-compose.yml").exists():
         info("檢查 OpenClaw 鏡像...")
         image_exists = False
         try:
-            r = subprocess.run(["docker", "images", "-q", "openclaw:local"], capture_output=True, text=True)
+            r = subprocess.run(["docker", "images", "-q", "openclaw:local"], capture_output=True, text=True, encoding='utf-8', errors='replace')
             if r.stdout.strip():
                 image_exists = True
         except Exception:
             pass
 
         if not image_exists:
-            warn("未偵測到 openclaw:local 鏡像，正在啟動構建 (此過程在 Raspberry Pi 上可能較慢)...")
+            warn("未偵測到 openclaw:local 鏡像，正在啟動構建（Raspberry Pi 上可能較慢）…")
             docker_setup_script = openclaw_dir / "docker-setup.sh"
             dockerfile_path = openclaw_dir / "Dockerfile"
-            
+
             build_success = False
             if dockerfile_path.exists():
                 try:
@@ -586,11 +900,10 @@ def action_start(compose_cmd: list[str]) -> None:
                     ok("OpenClaw 鏡像構建成功。")
                 except Exception as e:
                     err(f"鏡像構建失敗：{e}")
-            
+
             if not build_success:
-                info("本地構建失敗或缺少 Dockerfile，嘗試從 GitHub Container Registry 拉取官方鏡像作為替代 (ghcr.io/openclaw/openclaw:latest)...")
+                info("嘗試從 GitHub Container Registry 拉取官方鏡像（ghcr.io/openclaw/openclaw:latest）…")
                 try:
-                    # 拉取官方鏡像並重新標記為 openclaw:local 以匹配 compose 文件
                     subprocess.run(["docker", "pull", "ghcr.io/openclaw/openclaw:latest"], check=True)
                     subprocess.run(["docker", "tag", "ghcr.io/openclaw/openclaw:latest", "openclaw:local"], check=True)
                     ok("成功獲取官方 OpenClaw 鏡像並標記為 local。")
@@ -602,81 +915,45 @@ def action_start(compose_cmd: list[str]) -> None:
             subprocess.run(
                 compose_cmd + ["up", "-d", "--remove-orphans"],
                 cwd=openclaw_dir,
-                env=env, # 使用 get_openclaw_env 產出的 env
-                check=True
+                env=env,
+                check=True,
             )
             ok("OpenClaw 已就緒！")
+
+            # ── 自動執行 openclaw doctor --fix（修正 openclaw.json 廢棄鍵）──
+            run_openclaw_doctor(compose_cmd, openclaw_dir, env)
+
         except subprocess.CalledProcessError as exc:
             err(f"OpenClaw 啟動失敗：{exc}")
             # 不阻擋後續
 
-    # ── 安裝相依套件 ───────────────────────────────────────────────────────
-    info("檢查並安裝專案相依套件 (pip install -e .) ...")
-    pip_cmd = [sys.executable, "-m", "pip", "install", "-e", "."]
-    
-    # 偵測是否需要 --break-system-packages (針對 Kali/Debian 外部管理環境)
-    if system == "Linux":
-        try:
-            # 測試是否會報錯
-            r = subprocess.run([sys.executable, "-m", "pip", "install", "--help"], capture_output=True, text=True)
-            if "--break-system-packages" in r.stdout:
-                info("檢測到 Linux 外部管理環境，自動加入 --break-system-packages")
-                pip_cmd.append("--break-system-packages")
-        except Exception:
-            pass
-
-    try:
-        subprocess.run(
-            pip_cmd,
-            cwd=PROJECT_ROOT,
-            check=True
-        )
-        ok("相依套件安裝完成！")
-    except subprocess.CalledProcessError as exc:
-        err(f"相依套件安裝失敗：{exc}")
-        sys.exit(1)
-
-    # ── 原生啟動 openSOUL API ───────────────────────────────────────────────
-    info("原生啟動 openSOUL API...")
-    env_api = os.environ.copy()
-    env_api["FALKORDB_HOST"] = "localhost"  # Ensure it points to local forwarded port
-    
-    pid_file = PROJECT_ROOT / ".uvicorn.pid"
-    log_file_path = PROJECT_ROOT / "uvicorn.log"
-    
-    kwargs = {}
-    if sys.platform == "win32":
-        kwargs["creationflags"] = 0x00000008  # DETACHED_PROCESS
-        
-    try:
-        ok("openSOUL API 準備就緒！")
-        print_next_steps()
-        info("正在啟動 API (按 Ctrl+C 停止)...")
-        api_process = subprocess.Popen(
-            [sys.executable, "-m", "uvicorn", "soul.interface.api:app", "--host", "0.0.0.0", "--port", "8002"],
-            cwd=PROJECT_ROOT,
-            env=env_api
-        )
-        pid_file.write_text(str(api_process.pid), encoding="utf-8")
-        
-        # 讓它留在前景執行，阻擋腳本退出，這樣使用者就能直接看到 log
-        api_process.wait()
-    except KeyboardInterrupt:
-        info("接收到中斷訊號，正在關閉 API...")
-    except Exception as e:
-        err(f"啟動 API 失敗：{e}")
-    finally:
-        if 'api_process' in locals() and api_process.poll() is None:
-            api_process.terminate()
-            api_process.wait()
-    
+    # ── 顯示下一步操作說明，然後進入 Soul API 前景等待 ──────────────────
     print_next_steps()
+
+    if api_process is not None:
+        # 我們自己啟動的 Soul API → 阻擋等待，保持服務在線
+        info("正在運行 Soul API（按 Ctrl+C 停止所有服務）…")
+        try:
+            api_process.wait()
+        except KeyboardInterrupt:
+            info("接收到中斷訊號，正在關閉 Soul API…")
+        except Exception as e:
+            err(f"Soul API 異常退出：{e}")
+        finally:
+            if api_process.poll() is None:
+                # ⚠️ 只終止我們自己啟動的進程，絕不用 kill-by-port（防止誤殺 Docker Desktop）
+                api_process.terminate()
+                api_process.wait()
+    else:
+        # Soul API 是已有的外部進程（port 已被佔用）→ 不做任何終止操作
+        info("Soul API 由外部管理中，setup_env.py 不介入其生命週期。")
 
 
 def action_stop(compose_cmd: list[str]) -> None:
     """停止 FalkorDB 與 OpenClaw 服務（保留容器與 Volume，更安全）。"""
+    soul_api_port = get_soul_api_port()
     # 首先清理佔用的端口
-    cleanup_api_port(port=8002)
+    cleanup_api_port(port=soul_api_port)
 
     info("停止 FalkorDB 服務…")
     # 先強制存檔，確保記憶體中的圖譜資料寫入磁碟 (持久化最關鍵一步)
@@ -723,14 +1000,51 @@ def action_stop(compose_cmd: list[str]) -> None:
     if pid_file.exists():
         try:
             pid = int(pid_file.read_text(encoding="utf-8").strip())
+
+            # ⚠️ 安全驗證：確認該 PID 確實是 uvicorn/python 進程，防止誤殺 Docker Desktop
+            # Windows OS 會重用 PID，若進程已退出並被其他程序（如 Docker Desktop）佔用，
+            # 直接 taskkill 可能釀成大禍
+            is_safe_to_kill = False
             if sys.platform == "win32":
-                subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)], capture_output=True, check=False)
+                try:
+                    # 用 tasklist 查詢 PID 對應的程序名
+                    r = subprocess.run(
+                        ["tasklist", "/FI", f"PID eq {pid}", "/NH", "/FO", "CSV"],
+                        capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=5
+                    )
+                    output_lower = r.stdout.lower()
+                    # 只有確認是 python 相關進程才殺
+                    safe_names = ("python", "uvicorn", "pythonw")
+                    if any(name in output_lower for name in safe_names):
+                        is_safe_to_kill = True
+                    else:
+                        warn(f"PID {pid} 對應的進程不是 Python（{r.stdout.strip()[:80]}），跳過，防止誤殺其他服務。")
+                except Exception:
+                    pass  # 查詢失敗，保守起見不殺
             else:
-                import signal
-                os.kill(pid, signal.SIGTERM)
-            ok(f"已停止 API 進程 (PID: {pid})")
+                # Unix：用 /proc 或 ps 確認程序名
+                try:
+                    r = subprocess.run(["ps", "-p", str(pid), "-o", "comm="], capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=5)
+                    proc_name = r.stdout.strip().lower()
+                    if "python" in proc_name or "uvicorn" in proc_name:
+                        is_safe_to_kill = True
+                    elif proc_name:
+                        warn(f"PID {pid} 對應的進程是 '{proc_name}'，不是 Python，跳過終止。")
+                    # 若 ps 返回空（進程已退出）→ is_safe_to_kill 保持 False
+                except Exception:
+                    pass
+
+            if is_safe_to_kill:
+                if sys.platform == "win32":
+                    subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)], capture_output=True, check=False)
+                else:
+                    os.kill(pid, signal.SIGTERM)
+                ok(f"已停止 Soul API 進程 (PID: {pid})")
+            else:
+                info(f"Soul API 進程（PID: {pid}）已不在或非 Python，無需終止。")
+
         except Exception as e:
-            err(f"無法停止 openSOUL API：{e}")
+            err(f"停止 openSOUL API 時發生錯誤：{e}")
         finally:
             pid_file.unlink(missing_ok=True)
     else:
@@ -739,9 +1053,11 @@ def action_stop(compose_cmd: list[str]) -> None:
 
 def action_status() -> None:
     """顯示容器狀態與服務連通性。"""
-    falkordb_up  = check_port(FALKORDB_HOST, FALKORDB_PORT)
-    browser_up   = check_port(FALKORDB_HOST, 3000)
-    api_up       = check_port("localhost", 8002)
+    soul_api_port = get_soul_api_port()
+    falkordb_up   = check_port(FALKORDB_HOST, FALKORDB_PORT)
+    browser_up    = check_port(FALKORDB_HOST, 3000)
+    api_up        = check_port("localhost", soul_api_port)
+    openclaw_up   = check_port("localhost", 18789)  # OpenClaw gateway 預設端口
 
     if HAS_RICH:
         table = Table(title="openSOUL 服務狀態", show_header=True, header_style="bold cyan")
@@ -754,34 +1070,44 @@ def action_status() -> None:
 
         table.add_row("FalkorDB",           f"{FALKORDB_HOST}:{FALKORDB_PORT}", status_cell(falkordb_up))
         table.add_row("FalkorDB Browser",   f"{FALKORDB_HOST}:3000",            status_cell(browser_up))
-        table.add_row("openSOUL API",       "localhost:8002",                   status_cell(api_up))
+        table.add_row("openSOUL API (Web+API)", f"localhost:{soul_api_port}",   status_cell(api_up))
+        table.add_row("OpenClaw Gateway",   "localhost:18789",                  status_cell(openclaw_up))
         console.print(table)
+
+        if not api_up:
+            warn(f"⚠️  Soul API 未啟動！OpenClaw 無法回應 Telegram/Discord 訊息。")
+            warn(f"   請執行：python scripts/setup_env.py")
+        if not openclaw_up and api_up:
+            warn(f"⚠️  OpenClaw 未啟動！請確認 openclaw/docker-compose.yml 已運行。")
     else:
         print(f"\nFalkorDB  ({FALKORDB_HOST}:{FALKORDB_PORT}): {'✓ UP' if falkordb_up else '✗ DOWN'}")
-        print(f"FalkorDB Browser (3000):       {'✓ UP' if browser_up else '✗ DOWN'}")
-        print(f"openSOUL API     (8002):       {'✓ UP' if api_up else '✗ DOWN'}")
+        print(f"FalkorDB Browser (3000):           {'✓ UP' if browser_up else '✗ DOWN'}")
+        print(f"Soul API (localhost:{soul_api_port}): {'✓ UP' if api_up else '✗ DOWN'}")
+        print(f"OpenClaw Gateway (18789):          {'✓ UP' if openclaw_up else '✗ DOWN'}")
+        if not api_up:
+            print(f"[WARN] Soul API 未啟動！Telegram/Discord 訊息無法得到回應。")
 
 
 def print_next_steps() -> None:
+    soul_api_port = get_soul_api_port()
     msg = (
         "[bold]接下來：[/bold]\n"
-        "  1. 開啟瀏覽器（openSOUL 互動 UI）：\n"
-        "     [cyan]http://localhost:8002[/cyan]\n\n"
+        f"  1. 開啟瀏覽器（openSOUL 互動 UI 兼 API 端點）：\n"
+        f"     [cyan]http://localhost:{soul_api_port}[/cyan]\n\n"
         "  2. 圖譜記憶檢視器（FalkorDB Browser）：\n"
         "     [cyan]http://localhost:3000[/cyan]\n\n"
         "  3. 監看伺服器日誌（方便除錯）：\n"
-        "     [cyan]Get-Content -Wait -Tail 100 uvicorn.log[/cyan] (Windows) ← openSOUL API 日誌\n"
-        "     [cyan]tail -f uvicorn.log[/cyan] (Mac/Linux)               ← openSOUL API 日誌\n"
-        "     [cyan]docker logs -f openclaw-openclaw-cli-1[/cyan]          ← OpenClaw AI 決策日誌\n\n"
+        "     [cyan]Get-Content -Wait -Tail 100 uvicorn.log[/cyan] (Windows)\n"
+        "     [cyan]tail -f uvicorn.log[/cyan]                     (Mac/Linux)\n"
+        "     [cyan]docker logs -f openclaw-openclaw-cli-1[/cyan]  (OpenClaw AI 決策日誌)\n\n"
         "  4. 停止所有服務：\n"
         "     [cyan]python scripts/setup_env.py --stop[/cyan]"
-    ).format(root=PROJECT_ROOT)
+    )
 
     if HAS_RICH:
         console.print(Panel(msg, title="[green]環境就緒[/green]", border_style="green"))
     else:
         print("\n--- 接下來 ---")
-        # strip rich markup for plain output
         import re
         print(re.sub(r"\[.*?\]", "", msg))
 

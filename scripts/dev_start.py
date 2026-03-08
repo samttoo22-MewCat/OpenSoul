@@ -42,12 +42,15 @@ def main() -> None:
     if result.returncode != 0:
         print("[dev_start] setup_env.py 回傳非零，容器可能未正常啟動。", flush=True)
 
-    # ── 2. 等待 API 就緒（port 8001）────────────────────────────────────────
-    print("[dev_start] 等待 openSOUL API（localhost:8001）就緒…", flush=True)
-    if wait_for_port("localhost", 8001):
-        print("[dev_start] ✓ API 已就緒：http://localhost:8001", flush=True)
+    # ── 2. 等待 API 就緒（port 由環境變數決定，預設 6781）────────────────────
+    # 讀取 SOUL_API_PORT（與 setup_env.py 一致）
+    import os
+    soul_api_port = int(os.environ.get("SOUL_API_PORT", 6781))
+    print(f"[dev_start] 等待 openSOUL API（localhost:{soul_api_port}）就緒…", flush=True)
+    if wait_for_port("localhost", soul_api_port):
+        print(f"[dev_start] ✓ API 已就緒：http://localhost:{soul_api_port}", flush=True)
     else:
-        print("[dev_start] ⚠ 等待逾時，請確認容器是否正常啟動。", flush=True)
+        print(f"[dev_start] ⚠ 等待逾時，請確認容器是否正常啟動。", flush=True)
 
     # ── 3. 持續跟蹤 API 容器日誌（保持行程存活）────────────────────────────
     print("[dev_start] 開始跟蹤 opensoul-api 日誌…（Ctrl+C 停止）", flush=True)

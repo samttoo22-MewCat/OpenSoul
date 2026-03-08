@@ -223,9 +223,8 @@ python scripts/setup_env.py --status
 ### Step 4: Start Using
 After the script launches, interact with OpenSoul via:
 
-- **Web UI**: Visit `http://localhost:8002` ← Recommended for beginners
-- **API**: Direct REST calls to `http://localhost:8001`
-- **WebSocket**: Real-time connection to `ws://localhost:8001/ws`
+- **Web UI + API**: Visit `http://localhost:6781` ← Recommended for beginners (default port, configurable via `SOUL_API_PORT`)
+- **WebSocket**: Real-time connection to `ws://localhost:6781/ws`
 
 ---
 
@@ -340,7 +339,7 @@ Web UI supports these slash commands:
 
 **1. First Time**
 ```
-Step 1: Visit http://localhost:8002
+Step 1: Visit http://localhost:6781
 Step 2: Type /soul to view initial personality settings
 Step 3: Have some free-form conversations
 Step 4: Type /soul again to see what AI learned
@@ -406,7 +405,7 @@ Regularly backup these files to save complete AI state
 
 **Edit in Web UI**
 1. Launch OpenSoul: `python scripts/setup_env.py`
-2. Visit Web UI: `http://localhost:8002`
+2. Visit Web UI: `http://localhost:6781`
 3. Type in chat: `/soul`
 4. View and edit personality settings directly in Web interface
 5. Changes auto-save to `workspace/SOUL.md`
@@ -515,7 +514,7 @@ cat workspace/SOUL.md              # Current personality state
 ```bash
 # Launch Web UI
 python scripts/setup_env.py
-# Visit http://localhost:8002
+# Visit http://localhost:6781
 
 # AI will automatically perform dream reflection at night,
 # strengthening daytime learning
@@ -524,7 +523,7 @@ python scripts/setup_env.py
 ### 2. Automation Workflow
 ```bash
 # Direct API calls
-curl -X POST http://localhost:8001/chat \
+curl -X POST http://localhost:6781/chat \
   -H "Content-Type: application/json" \
   -d '{
     "session_id": "user-123",

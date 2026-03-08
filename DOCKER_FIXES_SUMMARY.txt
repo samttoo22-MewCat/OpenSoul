@@ -47,7 +47,7 @@
 +++   build: .
 +++   container_name: opensoul-api
 +++   ports:
-+++     - "8001:8001"
++++     - "6781:6781"
 +++   volumes:
 +++     - ./workspace:/app/workspace
 +++     - ./openclaw:/app/openclaw
@@ -138,14 +138,14 @@ Step 7: 检查 API 日志
   $ docker logs opensoul-api
 
   应该看到:
-    Uvicorn running on http://0.0.0.0:8001
+    Uvicorn running on http://0.0.0.0:6781
     (无错误信息)
 
 Step 8: 测试 API 连接
-  $ curl http://localhost:8001/health
+  $ curl http://localhost:6781/health
 
   或在浏览器中访问:
-    http://localhost:8001/docs  (Swagger 文档)
+    http://localhost:6781/docs  (Swagger 文档)
 
 
 📝 相关文档
@@ -207,7 +207,7 @@ Gmail skill 相关:
   [ ] 运行: docker-compose ps (检查所有服务状态)
   [ ] 运行: docker exec opensoul-api ls /app/openclaw/skills/gmail/
   [ ] 运行: docker exec opensoul-api ls /app/openclaw/skills/ | wc -l (应为 54)
-  [ ] 运行: curl http://localhost:8001/health (应返回 200)
+  [ ] 运行: curl http://localhost:6781/health (应返回 200)
 
 故障排查:
   [ ] 查看日志: docker logs opensoul-api
