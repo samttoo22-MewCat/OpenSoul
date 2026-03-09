@@ -44,10 +44,6 @@ class SoulNoteManager:
         self.notes_file = self.soul_dir / "soul_notes.json"
         self.reflections_file = self.soul_dir / "soul_reflections.json"
 
-        # 自動壓縮配置
-        self.auto_compress_interval = 1800  # 30 分鐘（秒）
-        self.last_auto_compress_time = 0  # Unix 時間戳
-
         # 確保文件存在
         self._ensure_files_exist()
 
@@ -77,33 +73,6 @@ class SoulNoteManager:
         # Format: YYYY-MM-DDTHH:MM:SS+08:00 (或當地時區)
         return now.strftime("%Y-%m-%dT%H:%M:%S%z")
 
-    def _check_auto_compress(self) -> None:
-        """
-        檢查是否需要自動壓縮。
-        每 30 分鐘檢查一次，若有新筆記則壓縮。
-        """
-        import time
-
-        current_time = time.time()
-
-        # 檢查是否超過 30 分鐘間隔
-        if current_time - self.last_auto_compress_time < self.auto_compress_interval:
-            return
-
-        # 更新最後壓縮時間
-        self.last_auto_compress_time = current_time
-
-        # 檢查今天是否有新筆記
-        today = datetime.now().strftime("%Y-%m-%d")
-        today_notes = self.get_notes_today()
-
-        if today_notes:
-            # 自動壓縮今日筆記
-            try:
-                self.compress_daily_reflection(today, merge_existing=True)
-            except Exception as e:
-                # 靜默失敗，不影響筆記添加
-                pass
 
     def add_note(
         self,
@@ -145,9 +114,6 @@ class SoulNoteManager:
             json.dumps(notes_data, indent=2, ensure_ascii=False),
             encoding="utf-8"
         )
-
-        # 🆕 添加後自動檢查是否需要壓縮
-        self._check_auto_compress()
 
         return timestamp
 
@@ -216,35 +182,16 @@ class SoulNoteManager:
         if custom_content:
             compressed_content = custom_content
         else:
-            # 生成新的壓縮摘要 (預設拼接)
-            # 構建新摘要
-            summary_parts = [f"## {target_date} 日反思\n"]
-
-            if existing_reflection:
-                summary_parts.append(f"**最後更新**: {self._get_local_timestamp()}\n")
-                summary_parts.append(f"**版本**: {existing_reflection.get('version', 1) + 1}\n")
-                summary_parts.append(f"**累積筆記數**: {len(day_notes) + existing_reflection.get('original_note_count', 0)}\n\n")
-
-                # 添加舊反思的關鍵部分（保留上一版本的要點）
-                if existing_reflection.get("key_insights"):
-                    summary_parts.append("### 之前的關鍵要點\n")
-                    for insight in existing_reflection["key_insights"]:
-                        summary_parts.append(f"- {insight}\n")
-                    summary_parts.append("\n")
-            else:
-                summary_parts.append(f"**總筆記數**: {len(day_notes)}\n")
-
-            # 新筆記按類別分組
+            # Fallback (只有在 LLM 失敗或未提供時使用)
+            summary_parts = [f"## {target_date} 日反思 (自動彙整)\n"]
+            summary_parts.append(f"**最後更新**: {self._get_local_timestamp()}\n")
+            summary_parts.append(f"本反思由系統自動產生，包含 {len(day_notes)} 筆原始筆記。\n\n")
+            
             for category, notes in sorted(by_category.items()):
-                summary_parts.append(f"\n### {category.upper()} ({len(notes)})\n")
+                summary_parts.append(f"### {category.upper()}\n")
                 for note in notes:
-                    time_part = note["timestamp"].split("T")[1]  # HH:MM:SS
-                    summary_parts.append(f"- **{time_part}**: {note['content']}\n")
-
-                    if note.get("tags"):
-                        tags_str = " ".join(f"#{tag}" for tag in note["tags"])
-                        summary_parts.append(f"  Tags: {tags_str}\n")
-
+                    summary_parts.append(f"- {note['content']}\n")
+            
             compressed_content = "".join(summary_parts)
 
         logger.info(f"[SoulNote] 壓縮 {target_date} 筆記，共 {len(day_notes)} 筆")
