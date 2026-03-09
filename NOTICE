@@ -1,0 +1,42 @@
+# NOTICE
+
+This project, OpenSoul, includes other open source software as dependencies. 
+Below are the attributions and license information for the primary projects used.
+
+---
+
+## OpenClaw
+- Repository: https://github.com/lucas-felix/OpenClaw
+- License: MIT
+
+**MIT License Text:**
+Copyright (c) 2024 Lucas Felix
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+---
+
+## FalkorDB
+- Website: https://falkordb.com/
+- License: Server Side Public License (SSPL) v1
+
+**Note on SSPL:**
+FalkorDB is licensed under the SSPL. The SSPL is NOT an OSI-approved open-source license. If you offer the functionality of FalkorDB as a service to third parties, you must make the source code of your entire service stack available under the SSPL. Please review the terms at https://falkordb.com/license-sspl/ for details.
+
+---
+
+## FastAPI
+- Website: https://fastapi.tiangolo.com/
+- License: MIT
+
+## Pydantic
+- Website: https://docs.pydantic.dev/
+- License: MIT
+
+---
+
+Additional Python dependencies are listed in `pyproject.toml`.
