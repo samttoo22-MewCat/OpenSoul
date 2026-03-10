@@ -271,13 +271,9 @@ def fix_openclaw_base_url() -> None:
     system = platform.system()
     soul_api_port = get_soul_api_port()
 
-    # 根據系統決定正確的 Docker host 地址
-    if system in ("Windows", "Darwin"):
-        correct_docker_host = "host.docker.internal"
-        wrong_docker_host = "172.17.0.1"
-    else:
-        correct_docker_host = "172.17.0.1"
-        wrong_docker_host = "host.docker.internal"
+    # 統一使用 host.docker.internal，藉由 docker-compose.yml 的 extra_hosts 處理跨平台解析
+    correct_docker_host = "host.docker.internal"
+    wrong_docker_host = "172.17.0.1"
 
     import re
 
@@ -335,15 +331,7 @@ def init_openclaw_config(config_dir: Path) -> None:
         # 不要在 openclaw.json 中設置這些鍵，否則會觸發 "Invalid config" 錯誤
         config = {
             "gateway": {
-                "bind": "lan",      # 跨平台綁定模式（lan = 允許局域網訪問）
-                "memory": {
-                    "enabled": false,
-                    "memoryFlush": false
-                },
-                "telegram": {
-                    "groupPolicy": "allowlist",
-                    "allowFrom": get_telegram_allow_list()
-                }
+                "bind": "lan"      # 跨平台綁定模式（lan = 允許局域網訪問）
             }
         }
 
@@ -359,6 +347,13 @@ def fix_openclaw_sessions(config_dir: Path) -> None:
     agents_dir = config_dir / "agents"
     if not agents_dir.exists():
         return
+
+    # 先行嘗試全面奪回 agents 目錄的權限，避免底下的 sessions.json 被 Docker 鎖死（即便是讀取也可能 Permission Denied）
+    if platform.system() != "Windows":
+        user_name = os.environ.get("USER")
+        if user_name:
+            import subprocess
+            subprocess.run(["sudo", "chown", "-R", f"{user_name}:{user_name}", str(agents_dir)], check=False, capture_output=True)
 
     import json
 
@@ -508,9 +503,13 @@ def fix_openclaw_config(config_dir: Path) -> None:
                     info("同步 OPENCLAW_GATEWAY_TOKEN 至 openclaw/.env")
         
         # 移除錯誤路徑（如果存在）
-        if "gateway" in data and isinstance(data["gateway"], dict) and "telegram" in data["gateway"]:
-            del data["gateway"]["telegram"]
-            changed = True
+        if "gateway" in data and isinstance(data["gateway"], dict):
+            if "telegram" in data["gateway"]:
+                del data["gateway"]["telegram"]
+                changed = True
+            if "memory" in data["gateway"]:
+                del data["gateway"]["memory"]
+                changed = True
 
         # 🆕 強制設定預設模型 Provider，防止 OpenClaw 自動回退到 Anthropic/Claude
         agents = data.get("agents", {})
@@ -862,6 +861,24 @@ def get_openclaw_env() -> dict[str, str]:
     config_dir.mkdir(parents=True, exist_ok=True)
     workspace_dir.mkdir(parents=True, exist_ok=True)
 
+    # 嘗試自動修復 .openclaw 目錄的權限 (若被 Docker 建立為 root)
+    if platform.system() != "Windows":
+        try:
+            oc_json = config_dir / "openclaw.json"
+            if not os.access(config_dir, os.W_OK) or (oc_json.exists() and not os.access(oc_json, os.W_OK)):
+                warn("偵測到 .openclaw 或其設定檔權限不足，嘗試自動取回權限 (可能需要輸入 sudo 密碼)...")
+                user_name = os.environ.get("USER")
+                if user_name:
+                    subprocess.run(["sudo", "chown", "-R", f"{user_name}:{user_name}", str(config_dir)], check=False)
+        except Exception as e:
+            warn(f"自動取回權限失敗：{e}")
+
+    # 決定正確的 Docker Host URL
+    docker_host = "host.docker.internal"
+    api_port = get_soul_api_port()
+    base_url = f"http://{docker_host}:{api_port}/v1"
+    os.environ["OPENAI_BASE_URL"] = base_url
+
     # 🆕 自動修正 openclaw/.env 中的 OPENAI_BASE_URL（Windows 配置糾正）
     # 這裡會確保 openclaw/.env 存在且內容正確
     fix_openclaw_base_url()
@@ -923,7 +940,7 @@ def get_openclaw_env() -> dict[str, str]:
     # 使用多個變數名稱確保覆蓋不同版本的 OpenClaw 與 Agent 配置
     env["OPENAI_API_KEY"] = "dummy"
     env["LLM_PROVIDER"] = "custom_openai"
-    env["OPENAI_BASE_URL"] = "http://host.docker.internal:6781/v1"
+    env["OPENAI_BASE_URL"] = base_url
     env["MODEL"] = "aria"
     env["OPENAI_MODEL"] = "aria"
     env["OPENCLAW_AGENT_MODEL"] = "aria"
@@ -1017,6 +1034,17 @@ def action_start(compose_cmd: list[str]) -> None:
         if detect_docker():
             break
         time.sleep(1)
+
+    # 🆕 Linux 防火牆自動開洞：允許 Docker 橋接網卡訪問主機 (解決 host.docker.internal Time Out)
+    if platform.system() == "Linux":
+        info("正在設定 Linux 防火牆以允許 Docker 存取本地 API (可能需要輸入 sudo 密碼)...")
+        try:
+            # -I INPUT 插入到最前面，優先權最高
+            subprocess.run(["sudo", "iptables", "-I", "INPUT", "-i", "docker0", "-j", "ACCEPT"], check=False, capture_output=True)
+            subprocess.run(["sudo", "iptables", "-I", "INPUT", "-i", "br-+", "-j", "ACCEPT"], check=False, capture_output=True)
+            ok("已套用 Docker 網路防火牆通行規則")
+        except Exception as e:
+            warn(f"自動設定防火牆失敗，若 OpenClaw 發生 Time out 請手動執行 iptables 放行指令。細節: {e}")
 
     try:
         subprocess.run(
@@ -1384,16 +1412,21 @@ def print_install_guide(system: str, arch: str) -> None:
         cmd_hint = f"  # 下載 Docker Desktop for Windows：\n  {url}"
 
     msg = (
-        f"[bold red]未偵測到 Docker[/bold red]（OS: {system}, CPU: {arch}{', Distro: Kali' if is_kali else ''}）\n\n"
-        f"[bold]安裝步驟：[/bold]\n{cmd_hint}\n\n"
-        f"安裝完成後，重新執行：\n"
+        f"[bold red]未偵測到 Docker 或權限不足[/bold red]（OS: {system}, CPU: {arch}{', Distro: Kali' if is_kali else ''}）\n\n"
+        f"💡 [bold]常見錯誤：Permission Denied[/bold]\n"
+        f"若您已安裝 Docker 但仍看到此畫面，可能是當前使用者沒有權限存取 docker.sock。\n"
+        f"請執行以下指令將使用者加入 docker 群組並立即生效：\n"
+        f"  [cyan]sudo usermod -aG docker $USER[/cyan]\n"
+        f"  [cyan]newgrp docker[/cyan]\n\n"
+        f"[bold]全新安裝步驟：[/bold]\n{cmd_hint}\n\n"
+        f"設定/安裝完成後，重新執行：\n"
         f"  [cyan]python scripts/setup_env.py[/cyan]"
     )
 
     if HAS_RICH:
-        console.print(Panel(msg, title="[red]需要安裝 Docker[/red]", border_style="red"))
+        console.print(Panel(msg, title="[red]需要安裝 Docker 或權限不足[/red]", border_style="red"))
     else:
-        print(f"\n[需要安裝 Docker]\nOS: {system}, CPU: {arch}\n{url}\n")
+        print(f"\n[需要安裝 Docker 或權限不足]\n常見問題：如果已安裝 Docker，請嘗試執行 `sudo usermod -aG docker $USER` 和 `newgrp docker` 以賦予當前使用者權限。\nOS: {system}, CPU: {arch}\n{url}\n")
 
 
 # ── 進入點 ─────────────────────────────────────────────────────────────────

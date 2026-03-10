@@ -25,6 +25,8 @@ services:
       - ${OPENCLAW_WORKSPACE_DIR}:/home/node/.openclaw/workspace
       # 直接掛載本地技能目錄，確保主機 API 與容器 Gateway 共享同一份原始碼
       - ./skills:/home/node/.openclaw/skills
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
       ## Uncomment the lines below to enable sandbox isolation
       ## (agents.defaults.sandbox). Requires Docker CLI in the image
       ## (build with --build-arg OPENCLAW_INSTALL_DOCKER_CLI=1) or use
