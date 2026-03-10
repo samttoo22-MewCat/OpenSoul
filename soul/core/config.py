@@ -62,7 +62,7 @@ class Settings(BaseSettings):
     soul_prune_threshold: float = Field(0.05, alias="SOUL_PRUNE_THRESHOLD")
 
     # Gating
-    soul_verify_max_retries: int = Field(3, alias="SOUL_VERIFY_MAX_RETRIES")
+    soul_verify_max_retries: int = Field(1, alias="SOUL_VERIFY_MAX_RETRIES")
     soul_verify_threshold: float = Field(0.6, alias="SOUL_VERIFY_THRESHOLD")
 
     # Dream Engine

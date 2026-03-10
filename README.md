@@ -465,17 +465,18 @@ open soul/soul_note_web.html
 ## 📄 授權與歸屬
 
 ### OpenSoul 授權
-本項目採用 **MIT License** - 詳見 [LICENSE](../LICENSE) 文件。
+本項目採用 **MIT License** (SPDX: `MIT`) - 詳見 [LICENSE](LICENSE) 文件。
 
-### 開源依賴
-OpenSoul 基於以下開源項目構建：
+> [!WARNING]
+> **關於 FalkorDB (SSPL 授權)**
+> 本專案依賴的 FalkorDB 採用 **SSPL v1** 授權。SSPL 並非 OSI 認證的開源授權。若您將本專案作為服務（SaaS）提供給第三方，根據 SSPL 條款，您可能需要公開整個服務棧的原始碼。請務必詳細閱讀 [FalkorDB 授權說明](https://falkordb.com/license-sspl/)。
 
 | 項目 | 授權 | 用途 |
 |------|------|------|
-| **OpenClaw** | MIT | 技能執行框架（瀏覽器、郵件、代碼等自動化） |
-| **FalkorDB** | SSPL v1 | 圖數據庫（三層記憶架構） |
-| **FastAPI** | MIT | Web API 框架 |
-| **Pydantic** | MIT | 數據驗證和設置管理 |
+| **[OpenClaw](https://github.com/lucas-felix/OpenClaw)** | MIT | 技能執行框架（瀏覽器、郵件、代碼等自動化） |
+| **[FalkorDB](https://falkordb.com/)** | SSPL v1 | 圖數據庫（三層記憶架構） |
+| **[FastAPI](https://fastapi.tiangolo.com/)** | MIT | Web API 框架 |
+| **[Pydantic](https://docs.pydantic.dev/)** | MIT | 數據驗證和設置管理 |
 
 **重要提醒**：若要商業使用 FalkorDB，請遵守其 SSPL 條款。詳見 https://www.falkordb.com/
 

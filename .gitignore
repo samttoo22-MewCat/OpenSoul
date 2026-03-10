@@ -79,3 +79,15 @@ docker-compose.override.yml
 *.db
 *.sqlite
 *.sqlite3
+
+# macOS AppleDouble 檔案
+**/._*
+.DS_Store
+
+# 測試快取
+.pytest_cache/
+
+# 進程 ID
+*.pid
+**/*.pid
+.uvicorn.pid
