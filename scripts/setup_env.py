@@ -407,6 +407,18 @@ def fix_openclaw_sessions(config_dir: Path) -> None:
                 elif k == "modelId" and isinstance(v, str) and ("claude-" in v or v == "anthropic"):
                     obj[k] = "aria"
                     changed = True
+                
+                # 🆕 深入清洗 Agent 身上的「原生工具」記憶！
+                # 即使全域 nativeSkills 被停用，已經初始化的 Agent Sessions.json 還是會殘留一份 tools 列表。
+                elif k == "tools" and isinstance(v, dict) and "entries" in v:
+                    old_len = len(v["entries"])
+                    # 我們只保留真正維持系統運作的最基礎工具，徹底砍掉 web_search、image 甚至 browser（因為我們自己灌了 browser-control）
+                    # openclaw 必須的最核心工具：message(發送訊息)、read/write/edit/exec/process(基礎IO) 等
+                    allowed_tools = {"message", "read", "write", "edit", "exec", "process", "cron"}
+                    v["entries"] = [tool for tool in v["entries"] if tool.get("name") in allowed_tools]
+                    if len(v["entries"]) != old_len:
+                        changed = True
+
                 elif isinstance(v, (dict, list)):
                     if replace_recursive(v):
                         changed = True
@@ -482,6 +494,14 @@ def fix_openclaw_config(config_dir: Path) -> None:
         channels = data.get("channels", {})
         if not isinstance(channels, dict): channels = {}
         data["channels"] = channels # 確保存在
+        
+        commands = data.get("commands", {})
+        if not isinstance(commands, dict): commands = {}
+        data["commands"] = commands
+        if commands.get("nativeSkills") != False:
+            info("強制關閉 OpenClaw 內置所有原生工具 (nativeSkills=false)，避免代理使用未正確配置的第三方服務")
+            commands["nativeSkills"] = False
+            changed = True
         
         telegram = channels.get("telegram", {})
         if not isinstance(telegram, dict): telegram = {}
@@ -940,11 +960,15 @@ def get_openclaw_env() -> dict[str, str]:
     env["OPENCLAW_GATEWAY_TOKEN"] = token
 
     # 🆕 精簡同步邏輯 (Selective Sync)
-    # 僅同步必要技能，減少磁碟 I/O。基礎技能已在 Docker 內建。
-    ESSENTIAL_SKILLS = ["soul-note", "edit-soul", "browser-control", "healthcheck", "session-logs", "gmail"]
+    # 嚴格限制只載入 Soul 引擎的核心技能與瀏覽器控制
+    ESSENTIAL_SKILLS = ["soul-note", "edit-soul", "browser-control"]
     
     if project_skills_dir.exists():
         target_skills_dir = config_dir / "skills"
+        # 為了確保不會有殘留技能，同步前先清理遠端技能資料夾
+        if target_skills_dir.exists():
+            import shutil
+            shutil.rmtree(target_skills_dir)
         target_skills_dir.mkdir(parents=True, exist_ok=True)
         
         info(f"正在同步核心技能至: {target_skills_dir}")
