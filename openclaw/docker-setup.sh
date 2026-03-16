@@ -417,15 +417,21 @@ docker compose "${COMPOSE_ARGS[@]}" run --rm --user root --entrypoint sh opencla
    [ -d /home/node/.openclaw/workspace/.openclaw ] && chown -R node:node /home/node/.openclaw/workspace/.openclaw || true'
 
 echo ""
-echo "==> Onboarding (interactive)"
-echo "Docker setup pins Gateway mode to local."
-echo "Gateway runtime bind comes from OPENCLAW_GATEWAY_BIND (default: lan)."
-echo "Current runtime bind: $OPENCLAW_GATEWAY_BIND"
-echo "Gateway token: $OPENCLAW_GATEWAY_TOKEN"
-echo "Tailscale exposure: Off (use host-level tailnet/Tailscale setup separately)."
-echo "Install Gateway daemon: No (managed by Docker Compose)"
-echo ""
-docker compose "${COMPOSE_ARGS[@]}" run --rm openclaw-cli onboard --mode local --no-install-daemon
+if [[ -n "${CI:-}" || -n "${OPENCLAW_NO_PROMPT:-}" ]]; then
+  echo "==> Onboarding (skipped — CI/OPENCLAW_NO_PROMPT mode)"
+  echo "Gateway token: $OPENCLAW_GATEWAY_TOKEN"
+  docker compose "${COMPOSE_ARGS[@]}" run --rm -T openclaw-cli onboard --mode local --no-install-daemon 2>/dev/null || true
+else
+  echo "==> Onboarding (interactive)"
+  echo "Docker setup pins Gateway mode to local."
+  echo "Gateway runtime bind comes from OPENCLAW_GATEWAY_BIND (default: lan)."
+  echo "Current runtime bind: $OPENCLAW_GATEWAY_BIND"
+  echo "Gateway token: $OPENCLAW_GATEWAY_TOKEN"
+  echo "Tailscale exposure: Off (use host-level tailnet/Tailscale setup separately)."
+  echo "Install Gateway daemon: No (managed by Docker Compose)"
+  echo ""
+  docker compose "${COMPOSE_ARGS[@]}" run --rm openclaw-cli onboard --mode local --no-install-daemon
+fi
 
 echo ""
 echo "==> Docker gateway defaults"

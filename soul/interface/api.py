@@ -575,32 +575,61 @@ def _execute_skill(fn_name: str, tool_call: dict, buf_append) -> str:
     skill_dir = skills_root / skill_dir_name
     scripts_dir = skill_dir / "scripts"
 
-    if not scripts_dir.exists():
-        buf_append("WARNING", "openSOUL.tool", f"技能 {skill_dir_name} 沒有 scripts/ 目錄")
-        return f"技能 {skill_dir_name} 沒有可執行的腳本"
-
-    # 找到腳本
-    py_scripts = list(scripts_dir.glob("*.py"))
-    if not py_scripts:
-        buf_append("WARNING", "openSOUL.tool", f"技能 {skill_dir_name}/scripts/ 中沒有 Python 檔案")
-        return f"技能 {skill_dir_name} 沒有可執行的 Python 腳本"
-
-    script_path = py_scripts[0]
-
     # 解析 LLM 傳來的參數
     try:
         args_dict = json.loads(tool_call["function"]["arguments"])
     except (json.JSONDecodeError, KeyError):
         args_dict = {}
 
-    # 建構 CLI 命令
-    cmd = [sys.executable, str(script_path)]
-    for key, value in args_dict.items():
-        if value is not None and value != "":
-            cmd.extend([f"--{key}", str(value)])
+    py_scripts = list(scripts_dir.glob("*.py")) if scripts_dir.exists() else []
 
-    buf_append("INFO", "openSOUL.tool", f"執行：{script_path.name} {args_dict}")
-    logger.info(f"[API] 執行技能腳本：{' '.join(cmd)}")
+    if py_scripts:
+        script_path = py_scripts[0]
+        # 建構 CLI 命令
+        cmd = [sys.executable, str(script_path)]
+        for key, value in args_dict.items():
+            if value is not None and value != "":
+                cmd.extend([f"--{key}", str(value)])
+        
+        buf_append("INFO", "openSOUL.tool", f"執行：{script_path.name} {args_dict}")
+        logger.info(f"[API] 執行技能腳本：{' '.join(cmd)}")
+    else:
+        # Fallback 執行模式：假設它是一個安裝在 Docker 容器內的 CLI
+        import shlex
+        import os as _os
+
+        # 先用 'which' 驗證 binary 存在於容器内
+        try:
+            check_result = subprocess.run(
+                ["docker", "exec", "openclaw-openclaw-gateway-1", "sh", "-c", f"which {skill_dir_name}"],
+                capture_output=True, timeout=10
+            )
+            if check_result.returncode != 0:
+                msg = f"技能 '{skill_dir_name}' 在 Docker 容器內找不到可執行檔。請確認該技能的依賴已正確安裝。"
+                buf_append("WARNING", "openSOUL.tool", msg)
+                return msg
+        except Exception as e:
+            buf_append("WARNING", "openSOUL.tool", f"無法驗證 {skill_dir_name} 存在：{e}")
+
+        cmd = ["docker", "exec"]
+        
+        if "NODE_TLS_REJECT_UNAUTHORIZED" in _os.environ:
+            cmd.extend(["-e", f"NODE_TLS_REJECT_UNAUTHORIZED={_os.environ['NODE_TLS_REJECT_UNAUTHORIZED']}"])
+        if "SUMMARIZE_MODEL" in _os.environ:
+            cmd.extend(["-e", f"SUMMARIZE_MODEL={_os.environ['SUMMARIZE_MODEL']}"])
+            
+        cmd.extend(["openclaw-openclaw-gateway-1", skill_dir_name])
+        
+        # 建構參數：支持任意 --key value 參數，也支持純 query 字串
+        query = args_dict.pop("query", None)
+        for key, value in args_dict.items():
+            if value is not None and str(value) != "":
+                cmd.extend([f"--{key}", str(value)])
+        if query:
+            cmd.extend(shlex.split(str(query)))
+            
+        buf_append("INFO", "openSOUL.tool", f"進入 Docker Fallback 執行：{' '.join(cmd)}")
+        logger.info(f"[API] 執行 Docker Fallback 技能：{' '.join(cmd)}")
 
     try:
         env = {
@@ -784,7 +813,17 @@ async def openai_chat_completions(req: OpenAIChatCompletionRequest) -> Any:
 
     # 🔗 [新機制] 固定 Session 與獲取工具資訊（供串流與非串流共享）
     session = _get_or_create_session("openclaw-main-brain")
-    tools_dict = [t.model_dump(exclude_none=True) for t in req.tools] if req.tools else None
+    # 🆕 忽略 OpenClaw 注入的 tools（含 web_search 等未授權工具）
+    # 改用 judge/skills 系統，確保 ARIA 只能使用核心技能
+    try:
+        available_tools_info = agent._judge.discover_available_tools()
+        tools_dict = []
+        for t_info in available_tools_info:
+            schema = _build_skill_schema(t_info["name"])
+            if schema:
+                tools_dict.append(schema)
+    except Exception:
+        tools_dict = None
 
     import json as _json
 
@@ -820,18 +859,9 @@ async def openai_chat_completions(req: OpenAIChatCompletionRequest) -> Any:
                 yield "data: [DONE]\n\n"
                 return
 
-            final_tc_list = None
-            if final_response.tool_calls:
-                final_tc_list = [OpenAIToolCall(**tc) for tc in final_response.tool_calls]
-
-            # Chunk 2: content（一次全送，目前 Agent 尚未支援內部 Token 級串流）
+            # 🆕 永遠只回傳純文字給 OpenClaw，tool 執行由 soul 內部處理完
+            # 不把 tool_calls 暴露出去，避免 OpenClaw 試圖在自己這邊執行 soul 的 skills
             content_delta: dict[str, Any] = {"content": final_response.text or ""}
-            if final_tc_list:
-                content_delta["tool_calls"] = [
-                    {"index": i, "id": tc.id, "type": "function",
-                     "function": {"name": tc.function.name, "arguments": tc.function.arguments}}
-                    for i, tc in enumerate(final_tc_list)
-                ]
             yield "data: " + _json.dumps({
                 "id": chunk_id, "object": "chat.completion.chunk",
                 "created": created_ts, "model": req.model,
@@ -842,7 +872,7 @@ async def openai_chat_completions(req: OpenAIChatCompletionRequest) -> Any:
             yield "data: " + _json.dumps({
                 "id": chunk_id, "object": "chat.completion.chunk",
                 "created": created_ts, "model": req.model,
-                "choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls" if final_tc_list else "stop"}]
+                "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]
             }) + "\n\n"
             yield "data: [DONE]\n\n"
 
@@ -857,14 +887,11 @@ async def openai_chat_completions(req: OpenAIChatCompletionRequest) -> Any:
             logger.exception("[/v1/chat/completions] 處理失敗")
             raise HTTPException(status_code=500, detail=str(exc))
 
-        tc_list = None
-        if response.tool_calls:
-            tc_list = [OpenAIToolCall(**tc) for tc in response.tool_calls]
-
+        # 🆕 永遠只回傳純文字給 OpenClaw，不暴露 tool_calls
         resp_msg = OpenAIChoiceMessage(
             role="assistant",
             content=response.text,
-            tool_calls=tc_list
+            tool_calls=None
         )
 
         resp_obj = OpenAIChatCompletionResponse(
@@ -875,7 +902,7 @@ async def openai_chat_completions(req: OpenAIChatCompletionRequest) -> Any:
                 OpenAIChoice(
                     index=0,
                     message=resp_msg,
-                    finish_reason="tool_calls" if tc_list else "stop"
+                    finish_reason="stop"
                 )
             ]
         )

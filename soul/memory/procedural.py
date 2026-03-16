@@ -180,13 +180,18 @@ class ProceduralMemory:
             result = self._graph.ro_query(
                 """
                 MATCH (p:Procedure {domain: $domain})
+                WHERE p.archived IS NULL OR p.archived = false
                 RETURN p ORDER BY p.success_count DESC LIMIT $limit
                 """,
                 params={"domain": domain, "limit": limit},
             ).result_set
         else:
             result = self._graph.ro_query(
-                "MATCH (p:Procedure) RETURN p ORDER BY p.success_count DESC LIMIT $limit",
+                """
+                MATCH (p:Procedure)
+                WHERE p.archived IS NULL OR p.archived = false
+                RETURN p ORDER BY p.success_count DESC LIMIT $limit
+                """,
                 params={"limit": limit},
             ).result_set
 
@@ -200,6 +205,61 @@ class ProceduralMemory:
                     pass
             procs.append(props)
         return procs
+
+    # ── Archival & Cleanup ────────────────────────────────────────────────────
+
+    def get_candidates_for_archival(self, idle_days: int = 14) -> list[str]:
+        """
+        回傳符合歸檔條件的 Procedure ID 列表：
+          - 失敗率高（failure_count > success_count * 2）且超過 idle_days 未使用
+          - 或從未成功且建立超過 30 天
+        """
+        from soul.dream.pruning import _days_ago_iso  # 避免循環引用
+        idle_cutoff = _days_ago_iso(idle_days)
+        never_used_cutoff = _days_ago_iso(30)
+
+        result = self._graph.ro_query(
+            """
+            MATCH (p:Procedure)
+            WHERE (p.archived IS NULL OR p.archived = false)
+              AND (
+                (p.failure_count > p.success_count * 2 AND p.last_used < $idle_cutoff)
+                OR (p.success_count = 0 AND p.created_at < $never_used_cutoff)
+              )
+            RETURN p.id AS id
+            """,
+            params={"idle_cutoff": idle_cutoff, "never_used_cutoff": never_used_cutoff},
+        ).result_set
+        return [row[0] for row in result]
+
+    def archive_procedure(self, procedure_id: str) -> None:
+        """標記程序為歸檔狀態（soft delete，仍保留於圖譜供審計）。"""
+        self._graph.query(
+            """
+            MATCH (p:Procedure {id: $id})
+            SET p.archived = true
+            """,
+            params={"id": procedure_id},
+        )
+
+    def trim_refines_chain(self, keep_versions: int = 3) -> int:
+        """
+        修剪 REFINES 版本鏈，歸檔超出 keep_versions 的舊版節點。
+        規則：若一個 Procedure 有 >= keep_versions 個較新版本指向它（遞移），則歸檔。
+        回傳：歸檔的節點數量。
+        """
+        result = self._graph.query(
+            """
+            MATCH (newer:Procedure)-[:REFINES*1..]->(ancestor:Procedure)
+            WHERE (ancestor.archived IS NULL OR ancestor.archived = false)
+            WITH ancestor, count(DISTINCT newer) AS chain_length
+            WHERE chain_length >= $keep_versions
+            SET ancestor.archived = true
+            RETURN count(ancestor) AS archived_count
+            """,
+            params={"keep_versions": keep_versions},
+        ).result_set
+        return int(result[0][0]) if result and result[0][0] else 0
 
     # ── Stats ─────────────────────────────────────────────────────────────────
 

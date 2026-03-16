@@ -412,9 +412,9 @@ def fix_openclaw_sessions(config_dir: Path) -> None:
                 # 即使全域 nativeSkills 被停用，已經初始化的 Agent Sessions.json 還是會殘留一份 tools 列表。
                 elif k == "tools" and isinstance(v, dict) and "entries" in v:
                     old_len = len(v["entries"])
-                    # 我們只保留真正維持系統運作的最基礎工具，徹底砍掉 web_search、image 甚至 browser（因為我們自己灌了 browser-control）
-                    # openclaw 必須的最核心工具：message(發送訊息)、read/write/edit/exec/process(基礎IO) 等
-                    allowed_tools = {"message", "read", "write", "edit", "exec", "process", "cron"}
+                    # openclaw 必須的最核心工具：message(發送訊息)、read/write/edit(基礎IO)、cron(定時)
+                    # ⚠️ 徹底拔除 exec 與 process，防止它自己寫 Script 在終端機駭來駭去
+                    allowed_tools = {"message", "read", "write", "edit", "cron"}
                     v["entries"] = [tool for tool in v["entries"] if tool.get("name") in allowed_tools]
                     if len(v["entries"]) != old_len:
                         changed = True
@@ -502,7 +502,16 @@ def fix_openclaw_config(config_dir: Path) -> None:
             info("強制關閉 OpenClaw 內置所有原生工具 (nativeSkills=false)，避免代理使用未正確配置的第三方服務")
             commands["nativeSkills"] = False
             changed = True
-        
+        # 🆕 清除先前錯誤注入的不支援 key（exec/process/onboarding/pairing）
+        for _bad_cmd in ("exec", "process"):
+            if _bad_cmd in commands:
+                del commands[_bad_cmd]
+                changed = True
+        for _bad_key in ("onboarding", "pairing"):
+            if _bad_key in data:
+                del data[_bad_key]
+                changed = True
+
         telegram = channels.get("telegram", {})
         if not isinstance(telegram, dict): telegram = {}
         
@@ -512,15 +521,15 @@ def fix_openclaw_config(config_dir: Path) -> None:
         env_allow_str = [str(i) for i in env_allow]
         current_allow_str = [str(i) for i in current_allow]
         
-        if current_allow_str != env_allow_str or telegram.get("dmPolicy") != "pairing":
+        if current_allow_str != env_allow_str or telegram.get("dmPolicy") != "allowlist" or telegram.get("groupPolicy") != "allowlist":
             info(f"更新 Telegram 頻道設定...")
             if "telegram" not in channels or not isinstance(channels["telegram"], dict):
                 channels["telegram"] = {"enabled": True}
             
-            # 使用 pairing 政策配合 allowFrom (字串格式)
+            # 🆕 將 dmPolicy 設為 allowlist (白名單模式)，關閉初始設定導引選單 (Pairing Onboarding)
             channels["telegram"].update({
                 "groupPolicy": "allowlist",
-                "dmPolicy": "pairing",
+                "dmPolicy": "allowlist",
                 "allowFrom": env_allow_str
             })
             changed = True
@@ -903,9 +912,229 @@ def sync_directory(src: Path, dst: Path) -> bool:
         return False
 
 
+def get_available_package_manager() -> tuple[str, list[str]] | None:
+    """
+    偵測系統上可用的包管理器。
+    回傳 (pm_name, install_cmd_parts)，例如 ("brew", ["brew", "install"])
+    """
+    system = platform.system()
+
+    # 檢查各平台的包管理器
+    managers = []
+
+    if system == "Darwin":
+        # macOS
+        managers = [
+            ("brew", ["brew", "install"]),
+            ("port", ["sudo", "port", "install"]),
+        ]
+    elif system == "Linux":
+        # Linux 發行版偵測
+        managers = [
+            ("apt", ["sudo", "apt-get", "install", "-y"]),
+            ("yum", ["sudo", "yum", "install", "-y"]),
+            ("dnf", ["sudo", "dnf", "install", "-y"]),
+            ("pacman", ["sudo", "pacman", "-S", "--noconfirm"]),
+            ("brew", ["brew", "install"]),  # Linuxbrew
+        ]
+    elif system == "Windows":
+        # Windows 包管理器（優先順序：Scoop > Choco > Winget）
+        managers = [
+            ("scoop", ["scoop", "install"]),
+            ("choco", ["choco", "install", "-y"]),
+            ("winget", ["winget", "install", "--exact", "--quiet"]),
+        ]
+
+    # 逐一檢查哪個包管理器可用
+    for pm_name, pm_cmd in managers:
+        try:
+            subprocess.run(
+                [pm_cmd[0], "--version"],
+                capture_output=True, check=True, timeout=5
+            )
+            return (pm_name, pm_cmd)
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            continue
+
+    return None
+
+
+def install_skill_dependencies(skill_name: str, skill_dir: Path) -> None:
+    """
+    自動安裝技能的二進制依賴。
+    讀取 SKILL.md 的 metadata，檢測所需工具並自動安裝。
+    """
+    skill_md = skill_dir / "SKILL.md"
+    if not skill_md.exists():
+        return
+
+    try:
+        import frontmatter
+        with open(skill_md, encoding='utf-8') as f:
+            doc = frontmatter.load(f)
+
+        metadata = doc.metadata.get("metadata", {})
+        openclaw_meta = metadata.get("openclaw", {})
+        requires = openclaw_meta.get("requires", {})
+        bins = requires.get("bins", [])
+        install_methods = openclaw_meta.get("install", [])
+
+        if not bins:
+            return
+
+        # 檢查每個 bin 是否已安裝
+        for bin_name in bins:
+            try:
+                subprocess.run(
+                    ["which", bin_name] if platform.system() != "Windows" else ["where", bin_name],
+                    capture_output=True, check=True, timeout=5
+                )
+                info(f"  ✓ {bin_name} 已安裝")
+                continue
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                pass
+
+            # 取得系統可用的包管理器
+            pm_info = get_available_package_manager()
+            if not pm_info:
+                system = platform.system()
+                if system == "Windows":
+                    warn(f"  ⚠ 【{bin_name}】無法自動安裝 - Windows 上找不到包管理器")
+                    warn(f"    請選擇以下任一方式安裝：")
+                    warn(f"    1️⃣  安裝 Scoop：  iwr -useb get.scoop.sh | iex")
+                    warn(f"    2️⃣  安裝 Chocolatey：https://chocolatey.org/install")
+                    warn(f"    3️⃣  使用 Winget（Windows 11）：winget install {bin_name}")
+                    warn(f"    4️⃣  手動下載：{skill_md}")
+                elif system == "Darwin":
+                    warn(f"  ⚠ 【{bin_name}】無法自動安裝 - macOS 上未找到 Homebrew")
+                    warn(f"    請安裝 Homebrew：/bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"")
+                elif system == "Linux":
+                    warn(f"  ⚠ 【{bin_name}】無法自動安裝 - Linux 上未找到包管理器")
+                    warn(f"    請使用你的發行版的包管理器 (apt/yum/dnf/pacman) 或安裝 Homebrew")
+                continue
+
+            pm_name, pm_cmd = pm_info
+            installed = False
+
+            # 嘗試用不同的包管理器安裝
+            for install_method in install_methods:
+                method_kind = install_method.get("kind")
+
+                # brew 方法適用於所有平台（macOS、Linux、Windows）
+                if method_kind == "brew":
+                    formula = install_method.get("formula")
+                    if formula and pm_name == "brew":
+                        try:
+                            info(f"  正在安裝 {bin_name} (via brew)…")
+                            subprocess.run(
+                                pm_cmd + [formula],
+                                capture_output=True, check=True, timeout=120
+                            )
+                            ok(f"  ✓ {bin_name} 安裝完成")
+                            installed = True
+                            break
+                        except Exception as e:
+                            warn(f"  Brew 安裝失敗：{e}")
+
+                # apt 方法用於 Linux
+                elif method_kind == "apt" and pm_name == "apt":
+                    package = install_method.get("package")
+                    if package:
+                        try:
+                            info(f"  正在安裝 {bin_name} (via apt)…")
+                            subprocess.run(
+                                pm_cmd + [package],
+                                capture_output=True, check=True, timeout=120
+                            )
+                            ok(f"  ✓ {bin_name} 安裝完成")
+                            installed = True
+                            break
+                        except Exception as e:
+                            warn(f"  Apt 安裝失敗：{e}")
+
+                # choco 方法用於 Windows
+                elif method_kind == "choco" and pm_name == "choco":
+                    package = install_method.get("package")
+                    if package:
+                        try:
+                            info(f"  正在安裝 {bin_name} (via choco)…")
+                            subprocess.run(
+                                pm_cmd + [package],
+                                capture_output=True, check=True, timeout=120
+                            )
+                            ok(f"  ✓ {bin_name} 安裝完成")
+                            installed = True
+                            break
+                        except Exception as e:
+                            warn(f"  Choco 安裝失敗：{e}")
+
+                # scoop 方法用於 Windows
+                elif method_kind == "scoop" and pm_name == "scoop":
+                    package = install_method.get("package")
+                    if package:
+                        try:
+                            info(f"  正在安裝 {bin_name} (via scoop)…")
+                            subprocess.run(
+                                pm_cmd + [package],
+                                capture_output=True, check=True, timeout=120
+                            )
+                            ok(f"  ✓ {bin_name} 安裝完成")
+                            installed = True
+                            break
+                        except Exception as e:
+                            warn(f"  Scoop 安裝失敗：{e}")
+
+            if not installed:
+                warn(f"  ⚠ 無法自動安裝 {bin_name}（缺少對應的安裝方法）")
+                warn(f"    請參考 {skill_md} 進行手動安裝")
+
+    except Exception as e:
+        warn(f"檢查 {skill_name} 依賴失敗：{e}")
+
+
+def setup_skill_api_keys() -> None:
+    """
+    自動設置技能所需的 API key。
+    優先讀取 .env 文件，無則跳過。
+    """
+    env_file = PROJECT_ROOT / ".env"
+    if not env_file.exists():
+        return
+
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(env_file)
+
+        # 支持的 API key 列表
+        api_keys = [
+            "OPENAI_API_KEY",
+            "ANTHROPIC_API_KEY",
+            "XAI_API_KEY",
+            "GEMINI_API_KEY",
+            "GOOGLE_GENERATIVE_AI_API_KEY",
+            "GOOGLE_API_KEY",
+            "FIRECRAWL_API_KEY",
+            "APIFY_API_TOKEN",
+        ]
+
+        for key in api_keys:
+            value = os.environ.get(key)
+            if value:
+                # 設置到當前進程和子進程
+                os.environ[key] = value
+                info(f"  已載入 API key: {key}")
+
+    except Exception as e:
+        warn(f"設置 API key 失敗：{e}")
+
+
 def get_openclaw_env() -> dict[str, str]:
     """產出一致的 OpenClaw Docker 環境變數。"""
     env = os.environ.copy()
+    # 🆕 提前注入 CI 旗標，確保 docker-setup.sh 也能繞過互動式提示器
+    env["CI"] = "true"
+    env["OPENCLAW_NO_PROMPT"] = "1"
+    env["TERM"] = "dumb"
     openclaw_dir = PROJECT_ROOT / "openclaw"
 
     config_dir = Path.home() / ".openclaw"
@@ -961,7 +1190,7 @@ def get_openclaw_env() -> dict[str, str]:
 
     # 🆕 精簡同步邏輯 (Selective Sync)
     # 嚴格限制只載入 Soul 引擎的核心技能與瀏覽器控制
-    ESSENTIAL_SKILLS = ["soul-note", "edit-soul", "browser-control"]
+    ESSENTIAL_SKILLS = ["soul-note", "edit-soul", "summarize"]
     
     if project_skills_dir.exists():
         target_skills_dir = config_dir / "skills"
@@ -976,11 +1205,16 @@ def get_openclaw_env() -> dict[str, str]:
         for skill in ESSENTIAL_SKILLS:
             src_skill = project_skills_dir / skill
             if src_skill.exists():
+                # 同步技能檔案（依賴由 Docker 自動安裝）
                 if sync_directory(src_skill, target_skills_dir / skill):
                     sync_count += 1
-        
+
         if sync_count > 0:
             ok(f"成功同步 {sync_count} 個專案核心技能。")
+
+        # 設置技能所需的 API key
+        info("正在設置技能 API key…")
+        setup_skill_api_keys()
         
         # 告知 Docker 使用該路徑下的 skills
         env["OPENCLAW_SKILLS_PATH"] = target_skills_dir.absolute().as_posix()
@@ -991,17 +1225,29 @@ def get_openclaw_env() -> dict[str, str]:
     env["OPENCLAW_GATEWAY_BIND"] = "lan"
     env["SOUL_PROJECT_ROOT"] = PROJECT_ROOT.absolute().as_posix()
 
-    # 🆕 設置 UTF-8 編碼
+    # 🆕 設置 UTF-8 編碼與忽略 TLS 憑證檢查（解決本機防毒或企業 Proxy 攔截導致的 fetch failed）
     env["PYTHONIOENCODING"] = "utf-8"
+    env["NODE_TLS_REJECT_UNAUTHORIZED"] = "0"
 
-    # 🆕 注入 API 位址與佔位符 Key (OpenClaw 內部檢查必需)
-    # 使用多個變數名稱確保覆蓋不同版本的 OpenClaw 與 Agent 配置
-    env["OPENAI_API_KEY"] = "dummy"
+    # 🆕 傳遞技能的 API key 到 Docker
+    skill_api_keys = [
+        "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "XAI_API_KEY",
+        "GEMINI_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY", "GOOGLE_API_KEY",
+        "FIRECRAWL_API_KEY", "APIFY_API_TOKEN"
+    ]
+    for api_key in skill_api_keys:
+        if api_key in os.environ:
+            env[api_key] = os.environ[api_key]
+
+    # 如果還沒有 OPENAI_API_KEY，設置佔位符（防止 OpenClaw 報錯）
+    if "OPENAI_API_KEY" not in env or not env["OPENAI_API_KEY"]:
+        env["OPENAI_API_KEY"] = "dummy"
     env["LLM_PROVIDER"] = "custom_openai"
     env["OPENAI_BASE_URL"] = base_url
     env["MODEL"] = "aria"
     env["OPENAI_MODEL"] = "aria"
     env["OPENCLAW_AGENT_MODEL"] = "aria"
+    env["SUMMARIZE_MODEL"] = "openai/aria"
     
     # 預防性注入，防止 OpenClaw 偵測到 Anthropic 模型時報錯（即便我們想用的是 ARIA）
     env["ANTHROPIC_API_KEY"] = "dummy"
@@ -1040,51 +1286,54 @@ def action_start(compose_cmd: list[str]) -> None:
 
     # 🆕 強化環境變數同步：將關鍵變數寫入 .env 文件，使 docker-compose 能讀取
     # 確保 Judge 在 Docker 容器中與原生 API 能共享配置
-    env_file = PROJECT_ROOT / ".env"
-    try:
-        # 讀取現有 .env
-        env_content = env_file.read_text(encoding="utf-8") if env_file.exists() else ""
-        lines = env_content.splitlines()
-        
-        # 需要持久化的鍵值配對
-        persistence_keys = [
-            "OPENCLAW_SKILLS_PATH", 
-            "OPENCLAW_CONFIG_DIR", 
-            "OPENCLAW_WORKSPACE_DIR", 
-            "OPENCLAW_GATEWAY_TOKEN",
-            "SOUL_PROJECT_ROOT",
-            "TELEGRAM_ALLOW_FROM",
-            "TELEGRAM_BOT_TOKEN",
-            "CUSTOM_OPENAI_API_KEY",
-            "OPENAI_API_KEY"
-        ]
-        
-        updated = False
-        for key in persistence_keys:
-            if key in env:
-                # 移除舊行並加入新行
-                val = env[key]
-                new_line = f"{key}={val}"
-                
-                # 檢查是否已存在且相同
-                exists = False
-                for i, line in enumerate(lines):
-                    if line.startswith(f"{key}="):
-                        if line != new_line:
-                            lines[i] = new_line
-                            updated = True
-                        exists = True
-                        break
-                
-                if not exists:
-                    lines.append(new_line)
-                    updated = True
-        
-        if updated:
-            env_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
-            ok("已更新 .env 檔案以確保環境變數一致性。")
-    except Exception as e:
-        warn(f"無法同步 .env：{e}")
+    for env_path in [PROJECT_ROOT / ".env", PROJECT_ROOT / "openclaw" / ".env"]:
+        try:
+            # 讀取現有 .env
+            env_content = env_path.read_text(encoding="utf-8") if env_path.exists() else ""
+            lines = env_content.splitlines()
+            
+            # 需要持久化的鍵值配對
+            persistence_keys = [
+                "OPENCLAW_SKILLS_PATH", 
+                "OPENCLAW_CONFIG_DIR", 
+                "OPENCLAW_WORKSPACE_DIR", 
+                "OPENCLAW_GATEWAY_TOKEN",
+                "SOUL_PROJECT_ROOT",
+                "TELEGRAM_ALLOW_FROM",
+                "TELEGRAM_BOT_TOKEN",
+                "CUSTOM_OPENAI_API_KEY",
+                "OPENAI_API_KEY",
+                "NODE_TLS_REJECT_UNAUTHORIZED",
+                "SUMMARIZE_MODEL"
+            ]
+            
+            updated = False
+            for key in persistence_keys:
+                if key in env:
+                    # 移除舊行並加入新行
+                    val = env[key]
+                    new_line = f"{key}={val}"
+                    
+                    # 檢查是否已存在且相同
+                    exists = False
+                    for i, line in enumerate(lines):
+                        if line.startswith(f"{key}="):
+                            if line != new_line:
+                                lines[i] = new_line
+                                updated = True
+                            exists = True
+                            break
+                    
+                    if not exists:
+                        lines.append(new_line)
+                        updated = True
+            
+            if updated:
+                env_path.parent.mkdir(parents=True, exist_ok=True)
+                env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+                ok(f"已更新 {env_path.name} 檔案以確保環境變數一致性。")
+        except Exception as e:
+            warn(f"無法同步 {env_path.name}：{e}")
 
     # 確保 Docker daemon 已完全啟動（Windows 可能需要更多時間）
     start_time = time.time()
@@ -1167,6 +1416,9 @@ def action_start(compose_cmd: list[str]) -> None:
         env_api = os.environ.copy()
         env_api["FALKORDB_HOST"] = "localhost"
         env_api["PYTHONIOENCODING"] = "utf-8"   # 防止 Windows cp950 編碼錯誤
+        # 🆕 限制 Judge 只能看到核心技能，防止 ARIA 使用 web_search 等非授權工具
+        if "OPENCLAW_SKILLS_PATH" in env:
+            env_api["OPENCLAW_SKILLS_PATH"] = env["OPENCLAW_SKILLS_PATH"]
 
         try:
             api_process = subprocess.Popen(
@@ -1213,10 +1465,11 @@ def action_start(compose_cmd: list[str]) -> None:
             build_success = False
             if dockerfile_path.exists():
                 try:
-                    if docker_setup_script.exists():
+                    # Windows 上 WSL 的 bash 無法翻譯 E: 等非 C: 磁碟路徑，直接用 docker build
+                    if docker_setup_script.exists() and platform.system() != "Windows":
                         subprocess.run(["bash", "docker-setup.sh"], cwd=openclaw_dir, env=env, check=True)
                     else:
-                        subprocess.run(["docker", "build", "-t", "openclaw:local", "."], cwd=openclaw_dir, check=True)
+                        subprocess.run(["docker", "build", "--no-cache", "-t", "openclaw:local", "."], cwd=openclaw_dir, check=True)
                     build_success = True
                     ok("OpenClaw 鏡像構建成功。")
                 except Exception as e:
@@ -1240,6 +1493,10 @@ def action_start(compose_cmd: list[str]) -> None:
                 check=True,
             )
             ok("OpenClaw 已就緒！")
+            # 🆕 OpenClaw 啟動後重新套用工具白名單，覆蓋 OpenClaw 初始化時可能重建的 sessions
+            time.sleep(5)
+            fix_openclaw_sessions(Path.home() / ".openclaw")
+            info("已重新套用工具白名單（exec/process 已鎖定）")
 
         except subprocess.CalledProcessError as exc:
             err(f"OpenClaw 啟動失敗：{exc}")
@@ -1422,12 +1679,122 @@ def print_next_steps() -> None:
         "     [cyan]python scripts/setup_env.py --stop[/cyan]"
     )
 
+    # 顯示技能狀態報告
+    ESSENTIAL_SKILLS = ["soul-note", "edit-soul", "summarize"]
+    print_skill_status_report(ESSENTIAL_SKILLS)
+
     if HAS_RICH:
         console.print(Panel(msg, title="[green]環境就緒[/green]", border_style="green"))
     else:
         print("\n--- 接下來 ---")
         import re
         print(re.sub(r"\[.*?\]", "", msg))
+
+
+def print_skill_status_report(essential_skills: list[str]) -> None:
+    """印出技能狀態檢查報告，顯示哪些技能可用，哪些因缺少依賴而不可用。"""
+    openclaw_dir = PROJECT_ROOT / "openclaw" / "skills"
+    if not openclaw_dir.exists():
+        return
+
+    skills_status = {}
+
+    for skill_name in essential_skills:
+        skill_dir = openclaw_dir / skill_name
+        skill_md = skill_dir / "SKILL.md"
+
+        if not skill_dir.exists():
+            skills_status[skill_name] = ("❌ 不存在", "技能文件夾未找到")
+            continue
+
+        if not skill_md.exists():
+            skills_status[skill_name] = ("✅ 就緒", "無依賴")
+            continue
+
+        # 檢查二進制依賴
+        try:
+            import frontmatter
+            with open(skill_md, encoding='utf-8') as f:
+                doc = frontmatter.load(f)
+
+            metadata = doc.metadata.get("metadata", {})
+            openclaw_meta = metadata.get("openclaw", {})
+            requires = openclaw_meta.get("requires", {})
+            bins = requires.get("bins", [])
+
+            if not bins:
+                skills_status[skill_name] = ("✅ 就緒", "無依賴")
+                continue
+
+            # 檢查依賴：先用 docker run --rm 在映像內檢查，再檢查主機
+            all_bins_found = True
+            checked_in_image = False
+
+            # 確認 openclaw:local 映像是否存在
+            image_exists = False
+            try:
+                ir = subprocess.run(
+                    ["docker", "images", "-q", "openclaw:local"],
+                    capture_output=True, timeout=5
+                )
+                image_exists = ir.returncode == 0 and bool(ir.stdout.strip())
+            except Exception:
+                pass
+
+            for bin_name in bins:
+                found = False
+
+                # 1. 在映像內執行 which 檢查（CLI 容器設計為執行後退出，故用 run --rm）
+                if image_exists:
+                    try:
+                        cmd_env = os.environ.copy()
+                        cmd_env["MSYS_NO_PATHCONV"] = "1"
+                        r = subprocess.run(
+                            ["docker", "run", "--rm", "openclaw:local", "sh", "-c", f"which {bin_name}"],
+                            capture_output=True, timeout=30, env=cmd_env
+                        )
+                        if r.returncode == 0:
+                            found = True
+                            checked_in_image = True
+                    except Exception:
+                        pass
+
+                # 2. 再檢查主機
+                if not found:
+                    try:
+                        hr = subprocess.run(
+                            ["which", bin_name] if platform.system() != "Windows" else ["where", bin_name],
+                            capture_output=True, timeout=5
+                        )
+                        if hr.returncode == 0:
+                            found = True
+                    except FileNotFoundError:
+                        pass
+
+                if not found:
+                    all_bins_found = False
+                    break
+
+            if all_bins_found:
+                location = "Docker 映像內" if checked_in_image else "主機"
+                skills_status[skill_name] = ("✅ 就緒", f"依賴已安裝 ({location}): {', '.join(bins)}")
+            else:
+                skills_status[skill_name] = ("⚠️  缺少依賴", f"需要: {', '.join(bins)}")
+
+        except Exception:
+            skills_status[skill_name] = ("⚠️  檢查失敗", "無法讀取 SKILL.md")
+
+    # 印出報告
+    if skills_status:
+        info("\n【核心技能狀態】")
+        for skill, (status, detail) in skills_status.items():
+            info(f"  {status}  {skill:20} - {detail}")
+
+        # 如果有缺少依賴的技能，提示用戶
+        missing_skills = [s for s, (status, _) in skills_status.items() if "缺少" in status]
+        if missing_skills:
+            warn(f"\n⚠️  有 {len(missing_skills)} 個技能因缺少依賴而無法使用：{', '.join(missing_skills)}")
+            warn("  依賴應由 Docker 在構建時自動安裝。請重新構建鏡像：python scripts/setup_env.py")
 
 
 def print_install_guide(system: str, arch: str) -> None:

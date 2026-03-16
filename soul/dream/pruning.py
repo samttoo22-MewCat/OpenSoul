@@ -26,6 +26,7 @@ class PruningReport:
     nodes_archived: int = 0
     bridges_created: int = 0
     max_frequency_updated: int = 0
+    procedures_archived: int = 0
     details: list[str] = field(default_factory=list)
 
 
@@ -69,6 +70,7 @@ class GraphPruning:
         self._archive_stale_nodes(report)
         self._update_max_frequency(report)
         self._create_latent_bridges(report)
+        self._prune_procedures(report)
 
         return report
 
@@ -253,6 +255,45 @@ class GraphPruning:
 
         except Exception as exc:
             report.details.append(f"跨域橋接失敗：{exc}")
+
+
+    # ── 5. 程序性記憶修剪 ─────────────────────────────────────────────────────
+
+    def _prune_procedures(self, report: PruningReport) -> None:
+        """
+        歸檔失敗率高或長期閒置的程序，並修剪過長的 REFINES 版本鏈。
+        （不物理刪除，設 archived=true 排除於檢索）
+        """
+        from soul.memory.procedural import ProceduralMemory
+        proc_mem = ProceduralMemory(self._client)
+
+        # 1. 歸檔高失敗率 / 長期閒置的程序
+        try:
+            candidates = proc_mem.get_candidates_for_archival(
+                idle_days=settings.soul_procedure_min_idle_days
+            )
+            for pid in candidates:
+                proc_mem.archive_procedure(pid)
+            if candidates:
+                report.procedures_archived += len(candidates)
+                report.details.append(
+                    f"歸檔 {len(candidates)} 個高失敗率/閒置程序"
+                )
+        except Exception as exc:
+            report.details.append(f"程序歸檔失敗：{exc}")
+
+        # 2. 修剪過長的 REFINES 版本鏈
+        try:
+            trimmed = proc_mem.trim_refines_chain(
+                keep_versions=settings.soul_procedure_max_versions
+            )
+            if trimmed > 0:
+                report.procedures_archived += trimmed
+                report.details.append(
+                    f"修剪 REFINES 鏈：歸檔 {trimmed} 個舊版程序"
+                )
+        except Exception as exc:
+            report.details.append(f"REFINES 鏈修剪失敗：{exc}")
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

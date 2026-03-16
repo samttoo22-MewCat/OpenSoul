@@ -15,7 +15,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-venv \
     ca-certificates curl gnupg lsb-release \
     $OPENCLAW_DOCKER_APT_PACKAGES && \
-    pip3 install --no-cache-dir seleniumbase markdownify && \
+    pip3 install --no-cache-dir --break-system-packages seleniumbase markdownify && \
     rm -rf /var/lib/apt/lists/*
 
 # 安裝 Docker CLI（用於 Sandbox 功能）
@@ -34,9 +34,15 @@ RUN mkdir -p /home/node/.openclaw/skills && \
     mkdir -p /home/node/.openclaw/workspace && \
     chown -R node:node /home/node/.openclaw
 
-# 複製本地 skills 目錄到鏡像中作為基礎備份
-# 運作時會由 docker-compose 的 volume 掛載覆蓋為宿主最新版
+# 複製本地 skills 目錄（必須在技能依賴安裝之前）
 COPY --chown=node:node skills/ /home/node/.openclaw/skills/
+
+# 🆕 通用技能依賴自動安裝：掃描所有 SKILL.md 並安裝依賴
+# summarize 是 Node.js 工具，直接用 npm 全域安裝
+RUN if [ -d /home/node/.openclaw/skills/summarize ]; then \
+      echo "📦 安裝 summarize (npm)..."; \
+      npm install -g @steipete/summarize; \
+    fi
 
 # 切換回 node 使用者
 USER node

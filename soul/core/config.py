@@ -65,6 +65,10 @@ class Settings(BaseSettings):
     soul_verify_max_retries: int = Field(1, alias="SOUL_VERIFY_MAX_RETRIES")
     soul_verify_threshold: float = Field(0.6, alias="SOUL_VERIFY_THRESHOLD")
 
+    # Procedural memory cleanup
+    soul_procedure_max_versions: int = Field(3, alias="SOUL_PROCEDURE_MAX_VERSIONS")
+    soul_procedure_min_idle_days: int = Field(14, alias="SOUL_PROCEDURE_MIN_IDLE_DAYS")
+
     # Dream Engine
     soul_dream_idle_minutes: int = Field(5, alias="SOUL_DREAM_IDLE_MINUTES")
     soul_dream_cron: str = Field("0 3 * * *", alias="SOUL_DREAM_CRON")

@@ -76,7 +76,9 @@ class MemoryContext:
         if self.concepts:
             parts.append("【相關語意概念】")
             for c in self.concepts[:5]:
-                parts.append(f"  - {c.get('name', '')}: {c.get('description', '')}")
+                penalty = c.get("_contradiction_penalty", 0.0)
+                prefix = f"[矛盾訊號 -{penalty:.2f}] " if penalty > 0 else ""
+                parts.append(f"  - {prefix}{c.get('name', '')}: {c.get('description', '')}")
 
         if self.procedures:
             parts.append("【相關操作程序】")
@@ -181,6 +183,18 @@ class EcphoryRetrieval:
         context.concepts = self._retrieve_concepts(
             query_embedding, seed_k, breadth_k, max_hops, weight_threshold, top_k
         )
+
+        # ── 2b. CONTRADICTS 側向抑制 ─────────────────────────────────────────
+        if context.concepts:
+            concept_ids = [c["id"] for c in context.concepts if "id" in c]
+            penalties = self._check_concept_contradictions(concept_ids)
+            if penalties:
+                for c in context.concepts:
+                    p = penalties.get(c.get("id", ""), 0.0)
+                    if p > 0:
+                        c["_contradiction_penalty"] = round(p, 2)
+                # 將有矛盾懲罰的 concept 移到列表後段
+                context.concepts.sort(key=lambda x: x.get("_contradiction_penalty", 0.0))
 
         # ── 3. 程序性記憶搜尋 ────────────────────────────────────────────────
         context.procedures = self._retrieve_procedures(query_embedding, seed_k)
@@ -315,7 +329,7 @@ class EcphoryRetrieval:
         embedding: list[float],
         seed_k: int,
     ) -> list[dict[str, Any]]:
-        """向量搜尋最相關的程序性記憶。"""
+        """向量搜尋最相關的程序性記憶（過濾已歸檔節點）。"""
         import json
         emb_str = _vec_str(embedding)
 
@@ -330,6 +344,8 @@ class EcphoryRetrieval:
         procs = []
         for row in result:
             props = dict(row[0].properties)
+            if props.get("archived") is True:
+                continue
             if "steps" in props:
                 try:
                     props["steps"] = json.loads(props["steps"])
@@ -337,6 +353,34 @@ class EcphoryRetrieval:
                     pass
             procs.append(props)
         return procs
+
+    def _check_concept_contradictions(
+        self, concept_ids: list[str]
+    ) -> dict[str, float]:
+        """
+        查詢已檢索到的 concept 之間的 CONTRADICTS 關係，
+        回傳每個涉及矛盾的 concept ID 應受的懲罰值（每條矛盾邊 +0.15）。
+        """
+        if not concept_ids:
+            return {}
+        try:
+            result = self._client.semantic.ro_query(
+                """
+                MATCH (u:Concept)-[:CONTRADICTS]->(v:Concept)
+                WHERE u.id IN $ids AND v.id IN $ids
+                RETURN u.id AS src, v.id AS tgt
+                """,
+                params={"ids": concept_ids},
+            ).result_set
+        except Exception:
+            return {}
+
+        penalties: dict[str, float] = {}
+        for row in result:
+            src, tgt = row[0], row[1]
+            penalties[src] = penalties.get(src, 0.0) + 0.15
+            penalties[tgt] = penalties.get(tgt, 0.0) + 0.15
+        return penalties
 
     def _retrieve_entities_from_episodes(
         self, episode_ids: list[str]
