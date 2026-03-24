@@ -1,7 +1,9 @@
 ---
 name: browser-control
-description: 使用 SeleniumBase UC (Undetected Chromedriver) 模式控制瀏覽器。可用於繞過自動化偵測、讀取動態網頁內容、截圖以及進行網頁互動（點擊、輸入）。當需要處理複雜網頁或機器人驗證時使用此工具。
+description: 使用 SeleniumBase UC (Undetected Chromedriver) 模式控制瀏覽器。適用於需要登入、點擊互動、截圖或繞過 Cloudflare 的複雜網頁。若只需讀取網頁內容或搜尋資料，請優先使用更輕量的 web-research skill（SearXNG + Jina Reader），無需啟動瀏覽器。
 ---
+
+> **注意**：單純讀取網頁內容請優先使用 `web-research` skill（`--action fetch`），速度更快且不需啟動瀏覽器。僅在需要互動操作（點擊、輸入、截圖）時才使用本 skill。
 
 # Browser Control (SeleniumBase UC Mode)
 

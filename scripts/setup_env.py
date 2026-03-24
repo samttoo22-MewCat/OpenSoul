@@ -1441,8 +1441,26 @@ def action_start(compose_cmd: list[str]) -> None:
     # ── 啟動前檢查 OpenClaw OPENAI_BASE_URL 設定 ─────────────────────────
     check_openclaw_base_url()
 
-    # ── 啟動 OpenClaw ─────────────────────────────────────────────────────
+    # ── 啟動 SearXNG（獨立啟動，不依賴 openclaw:local 鏡像）─────────────────
     openclaw_dir = PROJECT_ROOT / "openclaw"
+    if openclaw_dir.exists() and (openclaw_dir / "docker-compose.yml").exists():
+        info("啟動 SearXNG 搜尋服務…")
+        # 確保設定目錄存在且可寫（SearXNG 啟動時需要在此目錄建立 settings.yml）
+        searxng_config_dir = openclaw_dir / "searxng"
+        searxng_config_dir.mkdir(mode=0o777, parents=True, exist_ok=True)
+        try:
+            subprocess.run(
+                compose_cmd + ["-f", "docker-compose.yml", "up", "-d", "searxng"],
+                cwd=openclaw_dir,
+                env=env,
+                check=True,
+                capture_output=True,
+            )
+            ok("SearXNG 已就緒！（http://localhost:8888）")
+        except subprocess.CalledProcessError as exc:
+            warn(f"SearXNG 啟動失敗（web-research 搜尋功能將無法使用）：{exc}")
+
+    # ── 啟動 OpenClaw ─────────────────────────────────────────────────────
     if openclaw_dir.exists() and (openclaw_dir / "docker-compose.yml").exists():
         info("檢查 OpenClaw 鏡像...")
         image_exists = False
@@ -1633,6 +1651,7 @@ def action_status() -> None:
     browser_up    = check_port(FALKORDB_HOST, 3000)
     api_up        = check_port("localhost", soul_api_port)
     openclaw_up   = check_port("localhost", 18789)  # OpenClaw gateway 預設端口
+    searxng_up    = check_port("localhost", 8888)   # SearXNG 搜尋服務
 
     if HAS_RICH:
         table = Table(title="openSOUL 服務狀態", show_header=True, header_style="bold cyan")
@@ -1647,6 +1666,7 @@ def action_status() -> None:
         table.add_row("FalkorDB Browser",   f"{FALKORDB_HOST}:3000",            status_cell(browser_up))
         table.add_row("openSOUL API (Web+API)", f"localhost:{soul_api_port}",   status_cell(api_up))
         table.add_row("OpenClaw Gateway",   "localhost:18789",                  status_cell(openclaw_up))
+        table.add_row("SearXNG 搜尋",       "localhost:8888",                   status_cell(searxng_up))
         console.print(table)
 
         if not api_up:
@@ -1659,6 +1679,7 @@ def action_status() -> None:
         print(f"FalkorDB Browser (3000):           {'✓ UP' if browser_up else '✗ DOWN'}")
         print(f"Soul API (localhost:{soul_api_port}): {'✓ UP' if api_up else '✗ DOWN'}")
         print(f"OpenClaw Gateway (18789):          {'✓ UP' if openclaw_up else '✗ DOWN'}")
+        print(f"SearXNG 搜尋 (8888):               {'✓ UP' if searxng_up else '✗ DOWN'}")
         if not api_up:
             print(f"[WARN] Soul API 未啟動！Telegram/Discord 訊息無法得到回應。")
 
@@ -1671,6 +1692,8 @@ def print_next_steps() -> None:
         f"     [cyan]http://localhost:{soul_api_port}[/cyan]\n\n"
         "  2. 圖譜記憶檢視器（FalkorDB Browser）：\n"
         "     [cyan]http://localhost:3000[/cyan]\n\n"
+        "  2.5 SearXNG 隱私搜尋介面：\n"
+        "     [cyan]http://localhost:8888[/cyan]\n\n"
         "  3. 監看伺服器日誌（方便除錯）：\n"
         "     [cyan]Get-Content -Wait -Tail 100 uvicorn.log[/cyan] (Windows)\n"
         "     [cyan]tail -f uvicorn.log[/cyan]                     (Mac/Linux)\n"

@@ -1,0 +1,56 @@
+# SearXNG settings — OpenSoul local instance
+use_default_settings: true
+
+server:
+  secret_key: "opensoul-searxng-local-key-change-in-prod"
+  limiter: false
+  image_proxy: true
+  base_url: "http://localhost:8888/"
+
+ui:
+  static_use_hash: true
+  default_locale: "zh-Hant-TW"
+  query_in_title: true
+  infinite_scroll: true
+
+search:
+  safe_search: 0
+  autocomplete: ""
+  default_lang: "zh-TW"
+  ban_time_on_fail: 5
+  max_ban_time_on_fail: 120
+  formats:
+    - html
+    - json
+
+# 啟用的搜尋引擎
+engines:
+  - name: google
+    engine: google
+    shortcut: g
+    disabled: false
+
+  - name: bing
+    engine: bing
+    shortcut: b
+    disabled: false
+
+  - name: duckduckgo
+    engine: duckduckgo
+    shortcut: d
+    disabled: false
+
+  - name: wikipedia
+    engine: wikipedia
+    shortcut: wp
+    disabled: false
+
+  - name: github
+    engine: github
+    shortcut: gh
+    disabled: false
+
+  - name: stackoverflow
+    engine: stackoverflow
+    shortcut: so
+    disabled: false
