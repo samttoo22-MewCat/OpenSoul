@@ -44,59 +44,44 @@ class SemanticMemory:
     ) -> str:
         """
         插入或更新 Concept 節點。若 name 已存在則更新描述與時間戳。
-        回傳 concept ID。
+        使用 MERGE 避免並發競態產生重複節點。回傳 concept ID。
         """
-        # 先查找是否已存在
-        result = self._graph.ro_query(
-            "MATCH (c:Concept {name: $name}) RETURN c.id AS id LIMIT 1",
-            params={"name": name},
-        ).result_set
-
-        if result:
-            cid = result[0][0]
-            self._graph.query(
-                """
-                MATCH (c:Concept {id: $id})
-                SET c.description = $desc,
-                    c.updated_at = $now,
-                    c.type = $type
-                """,
-                params={"id": cid, "desc": description, "now": now_iso(), "type": concept_type},
-            )
-            return cid
-
-        cid = new_id()
+        new_cid = new_id()
         emb_str = _vec_str(embedding) if embedding else _vec_str([0.0] * settings.soul_embedding_dim)
         now_str = now_iso()
 
-        self._graph.query(
+        result = self._graph.query(
             f"""
-            CREATE (c:Concept {{
-                id: $id,
-                name: $name,
-                type: $type,
-                description: $desc,
-                embedding: vecf32({emb_str}),
-                canonical_id: $canonical_id,
-                polysemy_dict: $polysemy_dict,
-                synonyms: $synonyms,
-                created_at: $now,
-                updated_at: $now,
-                last_sense_discovered: $now
-            }})
+            MERGE (c:Concept {{name: $name}})
+            ON CREATE SET
+                c.id             = $id,
+                c.type           = $type,
+                c.description    = $desc,
+                c.embedding      = vecf32({emb_str}),
+                c.canonical_id   = null,
+                c.polysemy_dict  = '{{}}',
+                c.synonyms       = [],
+                c.created_at     = $now,
+                c.updated_at     = $now,
+                c.last_sense_discovered = $now
+            ON MATCH SET
+                c.description    = $desc,
+                c.type           = $type,
+                c.updated_at     = $now
+            RETURN c.id AS id
             """,
             params={
-                "id": cid,
+                "id": new_cid,
                 "name": name,
                 "type": concept_type,
                 "desc": description,
-                "canonical_id": None,
-                "polysemy_dict": "{}",
-                "synonyms": [],
                 "now": now_str,
             },
-        )
-        return cid
+        ).result_set
+
+        if result:
+            return result[0][0]
+        return new_cid
 
     def get_concept(self, concept_id: str) -> dict[str, Any] | None:
         result = self._graph.ro_query(

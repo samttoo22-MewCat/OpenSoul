@@ -8,7 +8,7 @@ Session 管理：對話 Session 生命週期與每日日誌寫入。
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -20,7 +20,7 @@ class Session:
 
     def __init__(self, session_id: str | None = None) -> None:
         self.session_id = session_id or str(uuid.uuid4())
-        self.started_at = datetime.utcnow()
+        self.started_at = datetime.now(UTC)
         self._log_entries: list[str] = []
         self.turn_count: int = 0                    # 對話輪數（每次 chat() 加 1）
         self.last_episode_id: str | None = None     # 最後寫入的 Episode ID
@@ -32,7 +32,7 @@ class Session:
         metadata: dict[str, Any] | None = None,
     ) -> None:
         """記錄一條對話條目（user / assistant / system）。"""
-        ts = datetime.utcnow().strftime("%H:%M:%S")
+        ts = datetime.now(UTC).strftime("%H:%M:%S")
         entry = f"[{ts}] **{role}**: {content}"
         if metadata:
             extra = ", ".join(f"{k}={v}" for k, v in metadata.items())

@@ -80,16 +80,16 @@ PID_FILE       = PROJECT_ROOT / ".mcp_server.pid"
 # ── 輸出工具 ───────────────────────────────────────────────────────────────────
 
 def info(msg: str) -> None:
-    print(f"[INFO] {msg}") if not HAS_RICH else console.print(f"[cyan]ℹ[/cyan]  {msg}")
+    print(f"[INFO] {msg}") if not HAS_RICH else console.print(f"[bold cyan]ℹ[/bold cyan]  {msg}")
 
 def ok(msg: str) -> None:
-    print(f"[ OK ] {msg}") if not HAS_RICH else console.print(f"[green]✓[/green]  {msg}")
+    print(f"[ OK ] {msg}") if not HAS_RICH else console.print(f"[bold green]✓[/bold green]  {msg}")
 
 def warn(msg: str) -> None:
-    print(f"[WARN] {msg}") if not HAS_RICH else console.print(f"[yellow]⚠[/yellow]  {msg}")
+    print(f"[WARN] {msg}") if not HAS_RICH else console.print(f"[bold yellow]⚠[/bold yellow]  {msg}")
 
 def err(msg: str) -> None:
-    print(f"[ERR ] {msg}") if not HAS_RICH else console.print(f"[red]✗[/red]  {msg}")
+    print(f"[ERR ] {msg}") if not HAS_RICH else console.print(f"[bold red]✗[/bold red]  {msg}")
 
 def header(title: str) -> None:
     if HAS_RICH:
@@ -434,41 +434,34 @@ def print_claude_desktop_config() -> None:
 
 def show_status() -> None:
     header("OpenSoul MCP 狀態")
+
     falkordb_ok = check_port(FALKORDB_HOST, FALKORDB_PORT)
-    print(f"  FalkorDB    : {'✓ 運行中' if falkordb_ok else '✗ 未連線'} ({FALKORDB_HOST}:{FALKORDB_PORT})")
 
     env = load_env()
     provider = env.get("SOUL_LLM_PROVIDER", "anthropic").lower()
     llm_key = env.get("OPENROUTER_API_KEY") if provider == "openrouter" else env.get("ANTHROPIC_API_KEY")
-    print(f"  LLM API Key : {'✓ 已設定' if llm_key else '✗ 未設定'} ({provider})")
-
     emb_key = env.get("OPENAI_API_KEY")
-    print(f"  Embed Key   : {'✓ 已設定' if emb_key else '✗ 未設定'}")
+    soul_md = PROJECT_ROOT / "workspace" / "SOUL.md"
+    cc_on = is_claude_code_enabled()
 
     try:
-        import fastmcp
         import importlib.metadata
-        ver = importlib.metadata.version("fastmcp")
-        print(f"  fastmcp     : ✓ v{ver}")
+        fmcp_ver = importlib.metadata.version("fastmcp")
+        fmcp_str = f"✓ v{fmcp_ver}"
     except Exception:
-        print("  fastmcp     : ✗ 未安裝")
+        fmcp_str = "✗ 未安裝"
 
-    soul_md = PROJECT_ROOT / "workspace" / "SOUL.md"
-    print(f"  SOUL.md     : {'✓ 存在' if soul_md.exists() else '⚠ 不存在（首次對話時自動建立）'}")
-
-    mcp_pid = ""
+    mcp_status = ""
     if PID_FILE.exists():
         try:
             pid = int(PID_FILE.read_text().strip())
-            os.kill(pid, 0)   # 確認進程仍存在
-            mcp_pid = f"✓ 運行中 (PID {pid}, HTTP:{MCP_HTTP_PORT})"
+            os.kill(pid, 0)
+            mcp_status = f"✓ 運行中 (PID {pid}, HTTP:{MCP_HTTP_PORT})"
         except Exception:
-            mcp_pid = "✗ PID 檔案存在但進程已死（殘留）"
+            mcp_status = "✗ PID 殘留（進程已死）"
     else:
-        mcp_pid = "─ 未在前景運行"
-    print(f"  MCP server  : {mcp_pid}")
+        mcp_status = "─ 未在前景運行"
 
-    # Claude Desktop 設定
     try:
         if platform.system() == "Darwin":
             desktop_cfg = Path.home() / "Library" / "Application Support" / "Claude" / "claude_desktop_config.json"
@@ -476,18 +469,31 @@ def show_status() -> None:
             desktop_cfg = Path(os.environ.get("APPDATA", "")) / "Claude" / "claude_desktop_config.json"
         else:
             desktop_cfg = Path.home() / ".config" / "Claude" / "claude_desktop_config.json"
-        if desktop_cfg.exists():
-            cfg_data = json.loads(desktop_cfg.read_text(encoding="utf-8"))
-            desktop_on = "opensoul" in cfg_data.get("mcpServers", {})
-        else:
-            desktop_on = False
+        desktop_on = "opensoul" in json.loads(desktop_cfg.read_text(encoding="utf-8")).get("mcpServers", {}) if desktop_cfg.exists() else False
     except Exception:
         desktop_on = False
-    print(f"  Claude Desktop: {'✓ 已啟用' if desktop_on else '✗ 未設定'}")
 
-    # Claude Code 設定
-    cc_on = is_claude_code_enabled()
-    print(f"  Claude Code : {'✓ 已啟用（全域）' if cc_on else '✗ 未啟用'}")
+    if HAS_RICH:
+        from rich.table import Table as _RichTable
+        t = _RichTable(show_header=False, box=None, padding=(0, 2))
+        t.add_row("[dim]FalkorDB[/dim]",       f"[{'green' if falkordb_ok else 'red'}]{'✓ 運行中' if falkordb_ok else '✗ 未連線'}[/] ({FALKORDB_HOST}:{FALKORDB_PORT})")
+        t.add_row("[dim]LLM API Key[/dim]",    f"[{'green' if llm_key else 'red'}]{'✓ 已設定' if llm_key else '✗ 未設定'}[/] ({provider})")
+        t.add_row("[dim]Embed Key[/dim]",       f"[{'green' if emb_key else 'red'}]{'✓ 已設定' if emb_key else '✗ 未設定'}[/]")
+        t.add_row("[dim]fastmcp[/dim]",         fmcp_str)
+        t.add_row("[dim]SOUL.md[/dim]",         f"[{'green' if soul_md.exists() else 'yellow'}]{'✓ 存在' if soul_md.exists() else '⚠ 不存在（首次對話時自動建立）'}[/]")
+        t.add_row("[dim]MCP server[/dim]",      mcp_status)
+        t.add_row("[dim]Claude Desktop[/dim]",  f"[{'green' if desktop_on else 'red'}]{'✓ 已啟用' if desktop_on else '✗ 未設定'}[/]")
+        t.add_row("[dim]Claude Code[/dim]",     f"[{'green' if cc_on else 'red'}]{'✓ 已啟用（全域）' if cc_on else '✗ 未啟用'}[/]")
+        console.print(t)
+    else:
+        print(f"  FalkorDB    : {'✓ 運行中' if falkordb_ok else '✗ 未連線'} ({FALKORDB_HOST}:{FALKORDB_PORT})")
+        print(f"  LLM API Key : {'✓ 已設定' if llm_key else '✗ 未設定'} ({provider})")
+        print(f"  Embed Key   : {'✓ 已設定' if emb_key else '✗ 未設定'}")
+        print(f"  fastmcp     : {fmcp_str}")
+        print(f"  SOUL.md     : {'✓ 存在' if soul_md.exists() else '⚠ 不存在（首次對話時自動建立）'}")
+        print(f"  MCP server  : {mcp_status}")
+        print(f"  Claude Desktop: {'✓ 已啟用' if desktop_on else '✗ 未設定'}")
+        print(f"  Claude Code : {'✓ 已啟用（全域）' if cc_on else '✗ 未啟用'}")
 
 
 # ── 主流程 ─────────────────────────────────────────────────────────────────────
@@ -525,6 +531,26 @@ def main() -> None:
     mcp_only: bool = args.mcp_only
 
     header("OpenSoul MCP Plugin 環境設定")
+
+    # 顯示環境資訊
+    system  = platform.system()
+    machine = platform.machine()
+    arch    = "arm64" if machine.lower() in ("arm64", "aarch64") else "amd64"
+    py_ver  = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+    if HAS_RICH:
+        from rich.table import Table as _RichTable
+        _t = _RichTable(show_header=False, box=None, padding=(0, 2))
+        _t.add_row("[dim]作業系統[/dim]",  f"[white]{system}[/white]")
+        _t.add_row("[dim]CPU 架構[/dim]",  f"[white]{arch}[/white]")
+        _t.add_row("[dim]Python[/dim]",    f"[white]{py_ver}[/white]")
+        _t.add_row("[dim]專案路徑[/dim]",  f"[white]{PROJECT_ROOT}[/white]")
+        console.print(_t)
+    else:
+        print(f"  OS:      {system}")
+        print(f"  CPU:     {arch}")
+        print(f"  Python:  {py_ver}")
+        print(f"  Project: {PROJECT_ROOT}")
+
     failed: list[str] = []
 
     if not mcp_only:
@@ -612,6 +638,11 @@ def main() -> None:
                 mcp_process.kill()
         PID_FILE.unlink(missing_ok=True)
         ok("MCP server 已停止")
+
+        # 從 Claude Code 移除 MCP 登記，讓 Claude 恢復原本狀態
+        info("正在從 Claude Code 移除 opensoul MCP 登記…")
+        disable_claude_code()
+        info("下次使用請重新執行 setup_mcp.py（或 --cc-enable）")
 
         # 同時停止 FalkorDB
         info("正在停止 FalkorDB…")

@@ -220,6 +220,13 @@ class SoulAgent:
             provider=self._provider
         )
 
+        # 最近一次裁判決策（供 API 回傳用）
+        self.last_judge_decision: dict[str, Any] = {
+            "recommended_tool": "none",
+            "reasoning": "",
+            "confidence": 0.0,
+        }
+
     # ── 公開介面 ───────────────────────────────────────────────────────────────
 
     @property
@@ -554,7 +561,7 @@ class SoulAgent:
             gating_action=gating_action,
             gating_score=gating_score,
             tool_calls=final_tool_calls,
-            judge_decision=getattr(self, "last_judge_decision", {"recommended_tool": "none", "reasoning": "", "confidence": 0.0})
+            judge_decision=self.last_judge_decision
         )
 
     # ── Private Helpers ────────────────────────────────────────────────────────

@@ -67,6 +67,12 @@ uvicorn.log
 *.temp
 .cache/
 
+# 開發除錯文字檔
+DOCKER_FIXES_SUMMARY.txt
+setup_output.txt
+tmp_logs.txt
+summarize_*.txt
+
 # Node 模塊（如果有前端）
 node_modules/
 npm-debug.log

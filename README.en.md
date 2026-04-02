@@ -136,12 +136,12 @@ This project provides unified one-command environment setup and launch scripts. 
 
 ### Prerequisites
 - **Docker**: Ensure Docker is installed and running
-- **Python 3.8+**: For setup scripts
+- **Python 3.11+**: Required (pyproject.toml specifies `^3.11`)
 - **Git**: For version control
 
 ### Step 1: Clone and Enter Project
 ```bash
-git clone https://github.com/YOUR_USERNAME/OpenSoul.git
+git clone https://github.com/soullonger/OpenSoul.git
 cd OpenSoul/OpenSoul
 ```
 
@@ -163,7 +163,7 @@ OpenSoul supports flexible combinations of LLM providers and embedding models:
 
 **Embedding Model Options**:
 - **OpenAI**: `text-embedding-3-small` (Recommended - good quality, low cost)
-- **Google**: `models/embedding-001`
+- **Google**: `google/gemini-embedding-001`
 - **OpenRouter**: Multiple embedding models supported
 
 **Key Features**:
@@ -760,7 +760,7 @@ We welcome contributions of all kinds! Found a bug or have a great idea? Feel fr
 ### Setup Development Environment
 ```bash
 # Clone and enter project
-git clone https://github.com/YOUR_USERNAME/OpenSoul.git
+git clone https://github.com/soullonger/OpenSoul.git
 cd OpenSoul/OpenSoul
 
 # Install dev dependencies (assumes Poetry)

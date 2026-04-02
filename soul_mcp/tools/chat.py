@@ -11,6 +11,12 @@ import logging
 import uuid
 from typing import Any
 
+from soul.memory.graph import get_graph_client
+from soul_mcp.adapters.graph_lite import get_lite_client
+from soul.core.agent import SoulAgent
+from soul.core.config import settings
+from soul.core.session import Session
+
 logger = logging.getLogger("soul_mcp.chat")
 
 
@@ -43,23 +49,24 @@ def soul_chat(message: str, session_id: str | None = None) -> dict[str, Any]:
 
     sid = session_id or str(uuid.uuid4())
 
-    # ── 1. 連線 FalkorDB ──────────────────────────────────────────────────
+    # ── 1. 連線 FalkorDB（若失敗則 fallback 到 SQLite lite client）─────────
     try:
-        from soul.memory.graph import get_graph_client
         graph_client = get_graph_client()
         if not graph_client.ping():
             raise ConnectionError("FalkorDB ping 失敗")
-    except Exception as e:
-        return {
-            "error": f"FalkorDB 無法連線：{e}",
-            "hint": "請執行 docker-compose up -d 啟動 FalkorDB",
-            "session_id": sid,
-        }
+    except Exception as falkor_err:
+        logger.warning(f"[soul_chat] FalkorDB 無法連線（{falkor_err}），嘗試 lite client…")
+        try:
+            graph_client = get_lite_client()
+        except Exception as lite_err:
+            return {
+                "error": f"FalkorDB 無法連線：{falkor_err}；lite client 也失敗：{lite_err}",
+                "hint": "請執行 docker-compose up -d 啟動 FalkorDB",
+                "session_id": sid,
+            }
 
     # ── 2. 建立 SoulAgent ────────────────────────────────────────────────
     try:
-        from soul.core.agent import SoulAgent
-        from soul.core.config import settings
         agent = SoulAgent(
             workspace=settings.workspace_path,
             graph_client=graph_client,
@@ -70,7 +77,6 @@ def soul_chat(message: str, session_id: str | None = None) -> dict[str, Any]:
 
     # ── 3. 建立 Session ──────────────────────────────────────────────────
     try:
-        from soul.core.session import Session
         session = Session(session_id=sid)
     except Exception as e:
         return {"error": f"Session 建立失敗：{e}"}

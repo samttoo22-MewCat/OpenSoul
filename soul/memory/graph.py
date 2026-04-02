@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import math
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from falkordb import FalkorDB, Graph
@@ -160,7 +160,7 @@ def compute_edge_weight(
     γ = gamma if gamma is not None else settings.soul_weight_gamma
     λ = decay_lambda if decay_lambda is not None else settings.soul_decay_lambda
 
-    elapsed_hours = (datetime.utcnow() - last_accessed).total_seconds() / 3600.0
+    elapsed_hours = (datetime.now(UTC) - last_accessed).total_seconds() / 3600.0
     recency = math.exp(-λ * elapsed_hours)
 
     max_freq = max(max_frequency, 1)
@@ -178,7 +178,7 @@ def new_id() -> str:
 
 def now_iso() -> str:
     """返回目前 UTC 時間的 ISO 格式字串。"""
-    return datetime.utcnow().isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
