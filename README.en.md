@@ -13,6 +13,26 @@ Core FalkorDB GraphRAG three-layer memory architecture, integrated with OpenClaw
 
 ---
 
+## Table of Contents
+
+- [Project Vision](#-project-vision)
+- [Core Features](#-core-features)
+- [Core Concepts](#-core-concepts)
+  - [Three-Layer Memory Architecture](#three-layer-memory-architecture)
+  - [EcphoryRAG Associative Retrieval](#ecphoryrag-associative-retrieval)
+  - [Virtual Neurochemistry](#virtual-neurochemistry)
+  - [Dream Engine & Automatic Reflection](#dream-engine--automatic-reflection)
+  - [SOUL Note System](#soul-note-system)
+- [Quick Start](#-quick-start)
+- [Web UI Feature Guide](#-web-ui-feature-guide)
+- [Module Details](#module-details)
+- [Claude Code MCP Integration](#-claude-code-mcp-integration)
+- [Configuration Deep Dive](#-configuration-deep-dive)
+- [Managing AI Personality & Viewing Notes](#-managing-ai-personality--viewing-notes)
+- [License & Attribution](#-license--attribution)
+
+---
+
 ## 🌟 Project Vision
 
 **OpenSoul** is a cognitive AI framework inspired by the neuroplasticity of the human brain. It's not just an LLM wrapper, but a complete cognitive architecture with "soul" and "memory":
@@ -462,6 +482,59 @@ cat workspace/SOUL.md              # Current personality state
 - Preferred interaction style: Detailed, concrete, code examples
 - Common topics: AI, programming, knowledge management
 ```
+
+---
+
+## 🔌 Claude Code MCP Integration
+
+OpenSoul provides an MCP Server (`soul_mcp/server.py`) that can be mounted in Claude Code, letting Claude Code directly invoke OpenSoul's cognitive capabilities.
+
+### Setup
+
+Use `scripts/setup_mcp.py` to manage MCP configuration (recommended):
+
+```bash
+# Full setup: start FalkorDB + validate API keys + write Claude Desktop config
+python scripts/setup_mcp.py
+
+# Enable globally in Claude Code (available across all projects)
+python scripts/setup_mcp.py --cc-enable
+
+# Disable
+python scripts/setup_mcp.py --cc-disable
+
+# Check current status (FalkorDB / API Key / Claude Desktop / Claude Code)
+python scripts/setup_mcp.py --status
+```
+
+Once mounted, these tools are available in Claude Code:
+- `soul_chat_tool` — trigger full cognitive loop conversation
+- `soul_memory_retrieve_tool` — retrieve from graph memory
+- `soul_judge_tool_endpoint` — query the tool judge module
+
+### Global Rules Injection (`~/.claude/CLAUDE.md`)
+
+When Claude Code runs in MCP server mode, it does **not** automatically load the `~/.claude/CLAUDE.md` global settings (e.g. language preferences, response style).
+
+OpenSoul solves this by reading the file inside `SoulIdentity.build_system_prompt()` and injecting those rules into the LLM system prompt, keeping behavior consistent with interactive Claude Code sessions.
+
+**Implementation** (`soul/identity/soul.py`):
+
+```python
+def build_system_prompt(self, memory_text: str = "", inject_global_rules: bool = True) -> str:
+    ...
+    # Only injected for the main conversation model
+    # (judge / dream / subconscious utility models pass inject_global_rules=False)
+    global_claude_md = Path.home() / ".claude" / "CLAUDE.md"
+    if inject_global_rules and global_claude_md.exists():
+        global_rules = global_claude_md.read_text(encoding="utf-8").strip()
+        # appended to system prompt
+```
+
+**Design principles**:
+- `inject_global_rules=True` (default): main LLM (Anthropic Claude) receives global rules
+- `inject_global_rules=False`: used for utility models (judge, dream, subconscious) to avoid unnecessary token cost
+- Silent fail on read error — does not affect the main flow
 
 ---
 
