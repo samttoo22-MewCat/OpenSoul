@@ -23,6 +23,11 @@ class Settings(BaseSettings):
     # LLM Provider 選擇：「anthropic」直連 Claude，「openrouter」透過 OpenRouter 路由
     soul_llm_provider: str = Field("anthropic", alias="SOUL_LLM_PROVIDER")
 
+    # Utility LLM：用於小功能（SubconsciousAssessor、reflect、dream、judge）
+    # 預設使用 OpenRouter + Qwen（成本低、速度快），與主對話模型分離
+    soul_utility_llm_provider: str = Field("openrouter", alias="SOUL_UTILITY_LLM_PROVIDER")
+    soul_utility_llm_model: str = Field("qwen/qwen3.5-35b-a3b", alias="SOUL_UTILITY_LLM_MODEL")
+
     # Anthropic
     anthropic_api_key: str = Field("", alias="ANTHROPIC_API_KEY")
 

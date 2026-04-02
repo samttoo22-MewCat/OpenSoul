@@ -167,7 +167,7 @@ class JudgeAgent:
     def _call_llm(self, user_prompt: str) -> str:
         if self._provider == "openrouter":
             resp = self._llm.chat.completions.create(
-                model=settings.soul_llm_model,
+                model=settings.soul_utility_llm_model,
                 max_tokens=600,
                 temperature=0.0,
                 messages=[
@@ -178,7 +178,7 @@ class JudgeAgent:
             return resp.choices[0].message.content or "{}"
         else:
             msg = self._llm.messages.create(
-                model=settings.soul_llm_model,
+                model=settings.soul_utility_llm_model,
                 max_tokens=600,
                 temperature=0.0,
                 system=self._DECIDER_PROMPT,

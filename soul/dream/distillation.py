@@ -72,7 +72,7 @@ class KnowledgeDistillation:
         self._episodic = EpisodicMemory(client)
         self._semantic = SemanticMemory(client)
         self._client = client
-        self._provider = settings.soul_llm_provider.lower()
+        self._provider = settings.soul_utility_llm_provider.lower()
         if self._provider == "openrouter":
             self._llm = OpenAI(
                 base_url=settings.openrouter_base_url,
@@ -82,7 +82,7 @@ class KnowledgeDistillation:
         else:
             self._llm_anthropic = anthropic.Anthropic(api_key=settings.anthropic_api_key)
             self._or_headers = {}
-        self._model = settings.soul_llm_model
+        self._model = settings.soul_utility_llm_model
 
     def run(self, recent_limit: int = 30, min_cluster_size: int = 2) -> DistillationReport:
         """

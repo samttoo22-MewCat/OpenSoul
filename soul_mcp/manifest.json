@@ -1,0 +1,38 @@
+{
+  "dxt_version": "0.1",
+  "name": "opensoul",
+  "display_name": "OpenSoul — 記憶型 AI 人格插件",
+  "version": "1.0.0",
+  "description": "為 Claude 提供持久記憶、情感狀態與 OpenSoul 人格（ARIA）。需要本地 FalkorDB（Docker）與 Embedding API。",
+  "author": {
+    "name": "OpenSoul Project"
+  },
+  "server": {
+    "type": "stdio",
+    "command": "python",
+    "args": ["-m", "soul_mcp.server"],
+    "cwd": "${extensionDir}/../..",
+    "env": {
+      "PYTHONPATH": "${extensionDir}/../.."
+    }
+  },
+  "tools": [
+    {
+      "name": "soul_chat_tool",
+      "description": "與 OpenSoul 認知代理對話，觸發完整認知迴圈（記憶 + 神經化學 + LLM）"
+    },
+    {
+      "name": "soul_memory_retrieve_tool",
+      "description": "從 FalkorDB 圖譜記憶中檢索相關情節、概念、程序（EcphoryRAG）"
+    },
+    {
+      "name": "soul_judge_tool_endpoint",
+      "description": "JudgeAgent 決策入口：分析需求並決定是否調用 OpenClaw 技能"
+    }
+  ],
+  "prerequisites": [
+    "FalkorDB 運行中（docker-compose up -d）",
+    "Embedding API 可用（OPENAI_API_KEY 或 OPENROUTER_API_KEY）",
+    "workspace/SOUL.md 存在（若缺失會自動建立 ARIA 人格）"
+  ]
+}

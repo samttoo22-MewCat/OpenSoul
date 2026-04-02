@@ -68,7 +68,7 @@ class LiDERReplay:
     def __init__(self, client: GraphClient) -> None:
         self._episodic = EpisodicMemory(client)
         self._procedural = ProceduralMemory(client)
-        self._provider = settings.soul_llm_provider.lower()
+        self._provider = settings.soul_utility_llm_provider.lower()
         if self._provider == "openrouter":
             self._llm = OpenAI(
                 base_url=settings.openrouter_base_url,
@@ -78,7 +78,7 @@ class LiDERReplay:
         else:
             self._llm_anthropic = anthropic.Anthropic(api_key=settings.anthropic_api_key)
             self._or_headers = {}
-        self._model = settings.soul_llm_model
+        self._model = settings.soul_utility_llm_model
 
     def run(self, batch_size: int = 5) -> ReplayReport:
         """

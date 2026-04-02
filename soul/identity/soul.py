@@ -38,10 +38,16 @@ class SoulIdentity:
     total_concepts: int = 0
     total_procedures: int = 0
 
-    def build_system_prompt(self, memory_text: str = "") -> str:
+    def build_system_prompt(self, memory_text: str = "", inject_global_rules: bool = True) -> str:
         """
         將身份、神經化學狀態與記憶脈絡組合為 LLM 系統提示詞。
         仿 OpenClaw 的 PiEmbeddedRunner 注入機制。
+
+        Args:
+            memory_text:         EcphoryRAG 觸發的記憶片段文字
+            inject_global_rules: 是否注入 ~/.claude/CLAUDE.md 全域規則。
+                                 主對話（Anthropic Claude）設為 True；
+                                 小模型工具（judge/dream/subconscious 等）設為 False。
         """
         mode_desc = {
             "balanced": "正常模式：平衡探索與謹慎",
@@ -81,6 +87,20 @@ class SoulIdentity:
                 "## 觸發回憶（EcphoryRAG）",
                 memory_text,
             ]
+
+        # ── 注入全域 CLAUDE.md 規則（僅主對話模型）────────────────────────────
+        global_claude_md = Path.home() / ".claude" / "CLAUDE.md"
+        if inject_global_rules and global_claude_md.exists():
+            try:
+                global_rules = global_claude_md.read_text(encoding="utf-8").strip()
+                if global_rules:
+                    prompt_parts += [
+                        "",
+                        "## 全域使用者規則（來自 ~/.claude/CLAUDE.md）",
+                        global_rules,
+                    ]
+            except Exception:
+                pass
 
         prompt_parts += [
             "",

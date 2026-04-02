@@ -1520,6 +1520,21 @@ def action_start(compose_cmd: list[str]) -> None:
             err(f"OpenClaw 啟動失敗：{exc}")
             # 不阻擋後續
 
+    # ── MCP Plugin 設定（非致命，失敗只警告）────────────────────────────
+    info("設定 Claude Desktop MCP Plugin…")
+    try:
+        _mcp_script = Path(__file__).parent / "setup_mcp.py"
+        _result = subprocess.run(
+            [sys.executable, str(_mcp_script), "--mcp-only"],
+            capture_output=True, text=True, timeout=30,
+        )
+        if _result.returncode == 0:
+            ok("MCP Plugin 設定完成（fastmcp + Claude Desktop config）")
+        else:
+            warn(f"MCP Plugin 設定失敗（非致命）：{_result.stderr[:200]}")
+    except Exception as _e:
+        warn(f"MCP Plugin 設定跳過：{_e}")
+
     # ── 顯示下一步操作說明，然後進入 Soul API 前景等待 ──────────────────
     print_next_steps()
 

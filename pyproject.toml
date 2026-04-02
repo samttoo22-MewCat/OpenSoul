@@ -5,7 +5,7 @@ description = "A human-mind-inspired neuro-symbolic cognitive AI system with dyn
 authors = ["openSOUL Contributors"]
 license = "MIT"
 readme = "README.md"
-packages = [{ include = "soul" }]
+packages = [{ include = "soul" }, { include = "soul_mcp" }]
 
 [tool.poetry.dependencies]
 python = "^3.11"
@@ -34,6 +34,8 @@ httpx = "^0.28"
 tenacity = "^9.0"
 seleniumbase = "^4.33"
 markdownify = "^0.14"
+fastmcp = ">=2.0"
+networkx = ">=3.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3"
@@ -44,6 +46,7 @@ mypy = "^1.13"
 
 [tool.poetry.scripts]
 soul = "soul.interface.cli:app"
+soul-mcp = "soul_mcp.server:mcp"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

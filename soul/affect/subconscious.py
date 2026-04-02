@@ -113,10 +113,11 @@ class SubconsciousAssessor:
             return SubconsciousAssessment()
 
     def _call_llm(self, user_prompt: str) -> str:
-        """呼叫 LLM，回傳原始文字回應。"""
+        """呼叫 LLM，回傳原始文字回應。使用 utility LLM model。"""
+        model = settings.soul_utility_llm_model
         if self._provider == "openrouter":
             resp = self._llm.chat.completions.create(
-                model=settings.soul_llm_model,
+                model=model,
                 max_tokens=500,
                 temperature=settings.soul_llm_temperature,
                 messages=[
@@ -128,7 +129,7 @@ class SubconsciousAssessor:
         else:
             # Anthropic
             msg = self._llm.messages.create(
-                model=settings.soul_llm_model,
+                model=model,
                 max_tokens=200,
                 temperature=settings.soul_llm_temperature,
                 system=self._SYSTEM_PROMPT,
