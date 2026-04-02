@@ -13,6 +13,26 @@
 
 ---
 
+## 目錄
+
+- [專案願景](#-專案願景)
+- [核心特色](#-核心特色)
+- [核心概念解釋](#-核心概念解釋)
+  - [三層記憶架構](#三層記憶架構)
+  - [EcphoryRAG 聯想檢索](#ecphoryrag-聯想檢索)
+  - [虛擬神經化學](#虛擬神經化學)
+  - [夢境引擎與自動反思](#夢境引擎與自動反思)
+  - [SOUL 筆記系統](#soul-筆記系統)
+- [快速開始](#-快速開始)
+- [Web UI 功能指南](#-web-ui-功能指南)
+- [模組詳解](#-模組詳解)
+- [Claude Code MCP 整合](#-claude-code-mcp-整合)
+- [配置深度指南](#-配置深度指南)
+- [管理 AI 人格與查看筆記](#-管理-ai-人格與查看筆記)
+- [授權與歸屬](#-授權與歸屬)
+
+---
+
 ## 🌟 專案願景
 
 **OpenSoul** 是一個以人類大腦神經可塑性為設計靈感的認知 AI 框架。它不只是一個 LLM 包裝器，而是一個具備「靈魂」與「記憶」的完整認知架構：
@@ -397,6 +417,46 @@ OpenSoul 提供完整的 Web 界面，支援以下功能：
 - 支持 57+ 個預編譯技能
 - 包括：瀏覽器自動化、郵件操作、代碼執行等
 - 完全沙箱化，由 Judge Agent 控制調用
+
+---
+
+## 🔌 Claude Code MCP 整合
+
+OpenSoul 提供 MCP Server（`soul_mcp/server.py`），可掛載到 Claude Code，讓 Claude Code 直接呼叫 OpenSoul 的認知能力。
+
+### 掛載方式
+
+```bash
+claude mcp add opensoul -- python -m soul_mcp.server
+```
+
+掛載後可在 Claude Code 中使用：
+- `soul_chat_tool` — 觸發完整認知迴圈對話
+- `soul_memory_retrieve_tool` — 檢索圖譜記憶
+- `soul_judge_tool_endpoint` — 詢問工具裁判模組
+
+### 全域規則注入（`~/.claude/CLAUDE.md`）
+
+Claude Code 在 MCP server 模式下運行時，**不會自動載入** `~/.claude/CLAUDE.md` 的全域設定（如語言偏好、回答風格等）。
+
+OpenSoul 透過在 `SoulIdentity.build_system_prompt()` 中讀取該檔案，將全域規則注入 LLM 系統提示，使其行為與互動模式中的 Claude Code 保持一致。
+
+**實作細節**（`soul/identity/soul.py`）：
+
+```python
+def build_system_prompt(self, memory_text: str = "", inject_global_rules: bool = True) -> str:
+    ...
+    # 僅主對話模型注入（judge/dream/subconscious 等小模型不注入）
+    global_claude_md = Path.home() / ".claude" / "CLAUDE.md"
+    if inject_global_rules and global_claude_md.exists():
+        global_rules = global_claude_md.read_text(encoding="utf-8").strip()
+        # 附加至系統提示
+```
+
+**設計原則**：
+- `inject_global_rules=True`（預設）：主對話 LLM（Anthropic Claude）會收到全域規則
+- `inject_global_rules=False`：傳給 judge、dream、subconscious 等 utility 小模型時使用，避免無謂 token 消耗
+- 讀取失敗時靜默略過，不影響主流程
 
 ---
 
