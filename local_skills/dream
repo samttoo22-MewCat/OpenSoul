@@ -1,0 +1,4 @@
+#!/bin/bash
+# Soul Dream - 手動觸發夢境鞏固
+cd /Users/mac/Desktop/coding/py/OpenSoul
+python -m soul.interface.cli dream

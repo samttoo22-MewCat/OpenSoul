@@ -1,0 +1,4 @@
+#!/bin/bash
+# Soul Status - 查看 OpenSoul 系統狀態
+cd /Users/mac/Desktop/coding/py/OpenSoul
+python -m soul.interface.cli status

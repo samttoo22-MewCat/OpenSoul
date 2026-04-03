@@ -1,0 +1,5 @@
+#!/bin/bash
+# Soul Memory Search - 搜尋記憶內容
+# 用法: /memory-search "search query"
+cd /Users/mac/Desktop/coding/py/OpenSoul
+python -m soul.interface.cli memory search "$@"

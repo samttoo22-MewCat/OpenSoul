@@ -1,0 +1,4 @@
+#!/bin/bash
+# Soul Chat - 啟動 OpenSoul 對話模式
+cd /Users/mac/Desktop/coding/py/OpenSoul
+python -m soul.interface.cli chat

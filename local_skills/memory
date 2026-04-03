@@ -1,0 +1,4 @@
+#!/bin/bash
+# Soul Memory - 查詢記憶圖譜統計
+cd /Users/mac/Desktop/coding/py/OpenSoul
+python -m soul.interface.cli memory stats

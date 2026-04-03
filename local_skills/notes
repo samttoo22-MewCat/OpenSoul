@@ -1,0 +1,4 @@
+#!/bin/bash
+# Soul Notes - 查看今日反思筆記
+cd /Users/mac/Desktop/coding/py/OpenSoul
+python -m soul.interface.cli notes view

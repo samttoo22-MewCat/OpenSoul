@@ -1,0 +1,4 @@
+#!/bin/bash
+# Soul Notes List - 列出最近反思筆記統計
+cd /Users/mac/Desktop/coding/py/OpenSoul
+python -m soul.interface.cli notes list

@@ -33,6 +33,8 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+import shutil
+import socket
 
 # ── PATH 修正（macOS Docker Desktop）──────────────────────────────────────────
 for _p in ["/usr/local/bin", "/usr/bin", "/opt/homebrew/bin"]:
@@ -100,9 +102,6 @@ def header(title: str) -> None:
 
 # ── Docker / FalkorDB（工具函數從 setup_env.py import，此處僅定義 fallback）──
 if not _IMPORTED_FROM_SETUP_ENV:
-    import shutil
-    import socket
-
     def find_docker_bin() -> str | None:  # type: ignore[no-redef]
         for c in [shutil.which("docker"), "/usr/local/bin/docker", "/opt/homebrew/bin/docker"]:
             if c and Path(c).exists():
@@ -310,6 +309,22 @@ def enable_claude_code() -> bool:
     )
     if result.returncode == 0:
         ok("Claude Code opensoul MCP 已啟用（全域）")
+        
+        # ── 行動：動態部署 Skill ──────────────────────────────────────────────────
+        local_skills_path = PROJECT_ROOT / "local_skills"
+        global_skills_path = Path.home() / ".claude" / "skills"
+        if local_skills_path.exists():
+            global_skills_path.mkdir(parents=True, exist_ok=True)
+            for item in local_skills_path.iterdir():
+                if item.name.startswith("."): continue
+                dest = global_skills_path / item.name
+                if item.is_dir():
+                    if dest.exists(): shutil.rmtree(dest)
+                    shutil.copytree(item, dest)
+                else:
+                    shutil.copy2(item, dest)
+            ok(f"已將 {local_skills_path.name} 內的技能部署到全域目錄 {global_skills_path}")
+            
         info("重啟 Claude Code 後生效")
         return True
     else:
@@ -328,6 +343,19 @@ def disable_claude_code() -> bool:
     )
     if result.returncode == 0:
         ok("Claude Code opensoul MCP 已停用")
+        
+        # ── 行動：清理動態部署的 Skill ───────────────────────────────────────────────
+        local_skills_path = PROJECT_ROOT / "local_skills"
+        global_skills_path = Path.home() / ".claude" / "skills"
+        if local_skills_path.exists():
+            for item in local_skills_path.iterdir():
+                if item.name.startswith("."): continue
+                target = global_skills_path / item.name
+                if target.exists():
+                    if target.is_dir(): shutil.rmtree(target)
+                    else: target.unlink()
+            ok(f"已從全域目錄清理 OpenSoul 專屬技能")
+            
         return True
     else:
         err(f"停用失敗：{result.stderr[:200]}")
