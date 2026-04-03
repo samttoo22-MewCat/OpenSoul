@@ -77,6 +77,8 @@ COMPOSE_FILE   = PROJECT_ROOT / "docker-compose.yml"
 SERVER_MODULE  = "soul_mcp.server"
 SERVER_SCRIPT  = PROJECT_ROOT / "soul_mcp" / "server.py"
 PID_FILE       = PROJECT_ROOT / ".mcp_server.pid"
+HOOKS_DIR      = PROJECT_ROOT / "soul_mcp" / "hooks"
+CLAUDE_SETTINGS = Path.home() / ".claude" / "settings.json"
 
 
 # ── 輸出工具 ───────────────────────────────────────────────────────────────────
@@ -283,6 +285,116 @@ def stop_all() -> None:
     disable_claude_code()
 
 
+# ── Claude Code Hooks 管理 ─────────────────────────────────────────────────────
+
+def _load_claude_settings() -> dict:
+    """讀取 ~/.claude/settings.json，不存在則回傳空 dict。"""
+    if CLAUDE_SETTINGS.exists():
+        try:
+            return json.loads(CLAUDE_SETTINGS.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+    return {}
+
+
+def _save_claude_settings(data: dict) -> None:
+    """寫回 ~/.claude/settings.json。"""
+    CLAUDE_SETTINGS.parent.mkdir(parents=True, exist_ok=True)
+    CLAUDE_SETTINGS.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+def setup_hooks() -> bool:
+    """將 UserPromptSubmit / Stop hooks 寫入 ~/.claude/settings.json。"""
+    inject_script = HOOKS_DIR / "inject_context.py"
+    write_script  = HOOKS_DIR / "write_memory.py"
+
+    if not inject_script.exists() or not write_script.exists():
+        err(f"Hook 腳本不存在：{HOOKS_DIR}")
+        return False
+
+    python = sys.executable
+    data = _load_claude_settings()
+    hooks = data.setdefault("hooks", {})
+
+    # UserPromptSubmit
+    hooks["UserPromptSubmit"] = [
+        {
+            "matcher": "",
+            "hooks": [
+                {
+                    "type": "command",
+                    "command": f"{python} {inject_script}",
+                }
+            ],
+        }
+    ]
+
+    # Stop
+    hooks["Stop"] = [
+        {
+            "matcher": "",
+            "hooks": [
+                {
+                    "type": "command",
+                    "command": f"{python} {write_script}",
+                }
+            ],
+        }
+    ]
+
+    _save_claude_settings(data)
+    ok("Claude Code hooks 已寫入（UserPromptSubmit + Stop）")
+    return True
+
+
+def remove_hooks() -> bool:
+    """從 ~/.claude/settings.json 移除 OpenSoul hooks。"""
+    data = _load_claude_settings()
+    hooks = data.get("hooks", {})
+    changed = False
+
+    for event in ("UserPromptSubmit", "Stop"):
+        if event not in hooks:
+            continue
+        # 只移除屬於 OpenSoul 的 entry（command 包含 soul_mcp/hooks）
+        filtered = [
+            entry for entry in hooks[event]
+            if not any(
+                "soul_mcp/hooks" in h.get("command", "") or "soul_mcp\\hooks" in h.get("command", "")
+                for h in entry.get("hooks", [])
+            )
+        ]
+        if len(filtered) != len(hooks[event]):
+            changed = True
+        if filtered:
+            hooks[event] = filtered
+        else:
+            del hooks[event]
+
+    if not hooks:
+        data.pop("hooks", None)
+
+    if changed:
+        _save_claude_settings(data)
+        ok("Claude Code hooks 已移除")
+    else:
+        info("Claude Code hooks 本來就未設定")
+    return True
+
+
+def is_hooks_enabled() -> bool:
+    """確認 OpenSoul hooks 是否已在 settings.json 中設定。"""
+    hooks = _load_claude_settings().get("hooks", {})
+    for event in ("UserPromptSubmit", "Stop"):
+        entries = hooks.get(event, [])
+        for entry in entries:
+            for h in entry.get("hooks", []):
+                cmd = h.get("command", "")
+                if "soul_mcp/hooks" in cmd or "soul_mcp\\hooks" in cmd:
+                    return True
+    return False
+
+
 # ── Claude Code MCP 開關 ───────────────────────────────────────────────────────
 
 def is_claude_code_enabled() -> bool:
@@ -324,7 +436,10 @@ def enable_claude_code() -> bool:
                 else:
                     shutil.copy2(item, dest)
             ok(f"已將 {local_skills_path.name} 內的技能部署到全域目錄 {global_skills_path}")
-            
+
+        # ── 設置 Hooks ────────────────────────────────────────────────────────
+        setup_hooks()
+
         info("重啟 Claude Code 後生效")
         return True
     else:
@@ -355,7 +470,10 @@ def disable_claude_code() -> bool:
                     if target.is_dir(): shutil.rmtree(target)
                     else: target.unlink()
             ok(f"已從全域目錄清理 OpenSoul 專屬技能")
-            
+
+        # ── 移除 Hooks ────────────────────────────────────────────────────────
+        remove_hooks()
+
         return True
     else:
         err(f"停用失敗：{result.stderr[:200]}")
@@ -516,6 +634,7 @@ def show_status() -> None:
     emb_key = env.get("OPENAI_API_KEY")
     soul_md = PROJECT_ROOT / "workspace" / "SOUL.md"
     cc_on = is_claude_code_enabled()
+    hooks_on = is_hooks_enabled()
 
     try:
         import importlib.metadata
@@ -557,6 +676,7 @@ def show_status() -> None:
         t.add_row("[dim]MCP server[/dim]",      mcp_status)
         t.add_row("[dim]Claude Desktop[/dim]",  f"[{'green' if desktop_on else 'red'}]{'✓ 已啟用' if desktop_on else '✗ 未設定'}[/]")
         t.add_row("[dim]Claude Code[/dim]",     f"[{'green' if cc_on else 'red'}]{'✓ 已啟用（全域）' if cc_on else '✗ 未啟用'}[/]")
+        t.add_row("[dim]Hooks[/dim]",            f"[{'green' if hooks_on else 'red'}]{'✓ 已設定（UserPromptSubmit + Stop）' if hooks_on else '✗ 未設定'}[/]")
         console.print(t)
     else:
         print(f"  FalkorDB    : {'✓ 運行中' if falkordb_ok else '✗ 未連線'} ({FALKORDB_HOST}:{FALKORDB_PORT})")
@@ -567,6 +687,7 @@ def show_status() -> None:
         print(f"  MCP server  : {mcp_status}")
         print(f"  Claude Desktop: {'✓ 已啟用' if desktop_on else '✗ 未設定'}")
         print(f"  Claude Code : {'✓ 已啟用（全域）' if cc_on else '✗ 未啟用'}")
+        print(f"  Hooks       : {'✓ 已設定（UserPromptSubmit + Stop）' if hooks_on else '✗ 未設定'}")
 
 
 # ── 主流程 ─────────────────────────────────────────────────────────────────────
