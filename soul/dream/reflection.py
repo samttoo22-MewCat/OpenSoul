@@ -394,7 +394,7 @@ class ReflectionModule:
         try:
             if self._provider == "openrouter":
                 resp = self._llm.chat.completions.create(
-                    model=settings.soul_llm_model,
+                    model=settings.soul_utility_llm_model,
                     max_tokens=200,
                     temperature=settings.soul_llm_temperature,
                     messages=[
@@ -405,7 +405,7 @@ class ReflectionModule:
                 raw = resp.choices[0].message.content or "{}"
             else:
                 msg = self._llm.messages.create(
-                    model=settings.soul_llm_model,
+                    model=settings.soul_utility_llm_model,
                     max_tokens=200,
                     temperature=settings.soul_llm_temperature,
                     system=self._SYSTEM_PROMPT,
@@ -452,8 +452,8 @@ class ReflectionModule:
         try:
             if self._provider == "openrouter":
                 resp = self._llm.chat.completions.create(
-                    model=settings.soul_llm_model,
-                    max_tokens=2000, # 增加 max_tokens 以容納更長的內容
+                    model=settings.soul_utility_llm_model,
+                    max_tokens=2000,
                     temperature=settings.soul_llm_temperature,
                     messages=[
                         {"role": "system", "content": sys_prompt},
@@ -463,7 +463,7 @@ class ReflectionModule:
                 raw = resp.choices[0].message.content or ""
             else:
                 msg = self._llm.messages.create(
-                    model=settings.soul_llm_model,
+                    model=settings.soul_utility_llm_model,
                     max_tokens=800,
                     temperature=settings.soul_llm_temperature,
                     system=sys_prompt,

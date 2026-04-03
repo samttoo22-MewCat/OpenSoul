@@ -31,6 +31,20 @@ ZERO_EMBEDDING = [0.0] * 1536
 FAKE_LLM_REPLY = "這是來自 Mock Claude 的測試回覆。"
 
 
+def _make_mock_openai_client(reply: str = FAKE_LLM_REPLY) -> MagicMock:
+    """建立 OpenAI (openrouter) mock，讓 chat.completions.create 回傳指定文字。"""
+    mock_msg = MagicMock()
+    mock_msg.content = reply
+    mock_msg.tool_calls = None
+    mock_choice = MagicMock()
+    mock_choice.message = mock_msg
+    mock_resp = MagicMock()
+    mock_resp.choices = [mock_choice]
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.return_value = mock_resp
+    return mock_client
+
+
 def _make_mock_graph_client() -> MagicMock:
     """建立完全 Mock 的 GraphClient（三圖譜方法均回傳空結果）。"""
     mock = MagicMock()
@@ -82,7 +96,7 @@ class TestEmbeddingService:
         """空字串輸入應直接回傳零向量，不呼叫 API。"""
         svc = EmbeddingService()
         result = svc.embed("   ")
-        assert len(result) == 1536
+        assert len(result) == svc._dim  # 使用實際設定的維度，避免硬編碼
         mock_openai_cls.return_value.embeddings.create.assert_not_called()
 
 
@@ -147,18 +161,13 @@ class TestSoulAgent:
 
     def test_chat_returns_agent_response(self, tmp_path: Path):
         """chat() 應回傳 AgentResponse，且 text 不為空。"""
-        mock_llm_message = MagicMock()
-        mock_llm_message.content = [MagicMock(text=FAKE_LLM_REPLY)]
-        mock_llm = MagicMock()
-        mock_llm.messages.create.return_value = mock_llm_message
-
+        mock_or_client = _make_mock_openai_client(FAKE_LLM_REPLY)
         mock_graph = _make_mock_graph_client()
-        # write_episode 要回傳一個假的 episode_id
         mock_graph.episodic.query.return_value = None
 
         with (
-            patch("soul.core.agent.OpenAI"),
-            patch("soul.core.agent.anthropic.Anthropic", return_value=mock_llm),
+            patch("soul.core.agent.OpenAI", return_value=mock_or_client),
+            patch("soul.core.agent.anthropic.Anthropic"),
             patch("soul.core.agent.initialize_schemas"),
             patch("soul.core.agent.get_graph_client", return_value=mock_graph),
             patch("soul.core.agent.EmbeddingService.embed", return_value=ZERO_EMBEDDING),
@@ -174,14 +183,11 @@ class TestSoulAgent:
 
     def test_chat_updates_turn_count(self, tmp_path: Path):
         """chat() 後 session.turn_count 應增加 1。"""
-        mock_llm_message = MagicMock()
-        mock_llm_message.content = [MagicMock(text=FAKE_LLM_REPLY)]
-        mock_llm = MagicMock()
-        mock_llm.messages.create.return_value = mock_llm_message
+        mock_or_client = _make_mock_openai_client(FAKE_LLM_REPLY)
 
         with (
-            patch("soul.core.agent.OpenAI"),
-            patch("soul.core.agent.anthropic.Anthropic", return_value=mock_llm),
+            patch("soul.core.agent.OpenAI", return_value=mock_or_client),
+            patch("soul.core.agent.anthropic.Anthropic"),
             patch("soul.core.agent.initialize_schemas"),
             patch("soul.core.agent.get_graph_client", return_value=_make_mock_graph_client()),
             patch("soul.core.agent.EmbeddingService.embed", return_value=ZERO_EMBEDDING),
@@ -195,14 +201,11 @@ class TestSoulAgent:
 
     def test_chat_neurochem_in_response(self, tmp_path: Path):
         """AgentResponse.neurochem 應包含 dopamine 和 serotonin。"""
-        mock_llm_message = MagicMock()
-        mock_llm_message.content = [MagicMock(text=FAKE_LLM_REPLY)]
-        mock_llm = MagicMock()
-        mock_llm.messages.create.return_value = mock_llm_message
+        mock_or_client = _make_mock_openai_client(FAKE_LLM_REPLY)
 
         with (
-            patch("soul.core.agent.OpenAI"),
-            patch("soul.core.agent.anthropic.Anthropic", return_value=mock_llm),
+            patch("soul.core.agent.OpenAI", return_value=mock_or_client),
+            patch("soul.core.agent.anthropic.Anthropic"),
             patch("soul.core.agent.initialize_schemas"),
             patch("soul.core.agent.get_graph_client", return_value=_make_mock_graph_client()),
             patch("soul.core.agent.EmbeddingService.embed", return_value=ZERO_EMBEDDING),
@@ -217,14 +220,11 @@ class TestSoulAgent:
 
     def test_chat_memory_context_is_memory_context(self, tmp_path: Path):
         """AgentResponse.memory_context 應為 MemoryContext 實例。"""
-        mock_llm_message = MagicMock()
-        mock_llm_message.content = [MagicMock(text="OK")]
-        mock_llm = MagicMock()
-        mock_llm.messages.create.return_value = mock_llm_message
+        mock_or_client = _make_mock_openai_client("OK")
 
         with (
-            patch("soul.core.agent.OpenAI"),
-            patch("soul.core.agent.anthropic.Anthropic", return_value=mock_llm),
+            patch("soul.core.agent.OpenAI", return_value=mock_or_client),
+            patch("soul.core.agent.anthropic.Anthropic"),
             patch("soul.core.agent.initialize_schemas"),
             patch("soul.core.agent.get_graph_client", return_value=_make_mock_graph_client()),
             patch("soul.core.agent.EmbeddingService.embed", return_value=ZERO_EMBEDDING),

@@ -28,6 +28,25 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[2]  # soul_mcp/hooks → OpenSo
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
+# ── 同步 Claude Code 的 model 設定到 OpenSoul ────────────────────────────────────
+import os as _os
+import json as _json
+_claude_cfg = Path.home() / ".claude" / "settings.json"
+if _claude_cfg.exists():
+    try:
+        _claude_model = _json.loads(_claude_cfg.read_text()).get("model", "")
+        _MODEL_MAP = {
+            "haiku":  "claude-haiku-4-5-20251001",
+            "sonnet": "claude-sonnet-4-6",
+            "opus":   "claude-opus-4-6",
+        }
+        if _claude_model in _MODEL_MAP:
+            _os.environ.setdefault("SOUL_LLM_MODEL", _MODEL_MAP[_claude_model])
+            # SOUL_LLM_PROVIDER 由 .env 決定，不在此強制設定
+            # （避免 Embedding 路由被覆蓋為 anthropic，導致 OpenRouter 模型無法存取）
+    except Exception:
+        pass  # Claude settings 讀取失敗，使用預設
+
 _DEFAULT_SOUL_MD = """\
 ---
 name: ARIA

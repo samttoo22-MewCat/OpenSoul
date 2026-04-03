@@ -125,9 +125,9 @@ class TestGraphLiteClient:
 
 
 class TestSoulJudgeTool:
-    @patch("soul_mcp.tools.judge.JudgeAgent")
-    @patch("soul_mcp.tools.judge.anthropic")
-    def test_returns_correct_schema(self, mock_anthropic, mock_judge_cls):
+    @patch("soul.gating.judge.JudgeAgent")
+    @patch("openai.OpenAI")
+    def test_returns_correct_schema(self, mock_openai, mock_judge_cls):
         mock_judge = MagicMock()
         mock_judge.discover_available_tools.return_value = [
             {"name": "browser-control", "description": "控制瀏覽器"}
@@ -149,7 +149,7 @@ class TestSoulJudgeTool:
 
     def test_returns_none_on_error(self):
         """當 LLM 初始化失敗時，應回傳 none 而非拋出例外。"""
-        with patch("soul_mcp.tools.judge.JudgeAgent", side_effect=Exception("LLM 不可用")):
+        with patch("openai.OpenAI", side_effect=Exception("LLM 不可用")):
             from soul_mcp.tools.judge import soul_judge_tool
             result = soul_judge_tool("測試")
         assert result["recommended_tool"] == "none"
@@ -165,7 +165,7 @@ class TestSoulMemoryRetrieve:
         在無 FalkorDB 且無 embedding service 的情況下，
         應回傳含 error 欄位的 dict（不崩潰）。
         """
-        with patch("soul_mcp.tools.memory.EmbeddingService", side_effect=ImportError("mock")):
+        with patch("soul.core.agent.EmbeddingService", side_effect=ImportError("mock")):
             from soul_mcp.tools.memory import soul_memory_retrieve
             result = soul_memory_retrieve("測試查詢")
 
@@ -178,7 +178,7 @@ class TestSoulMemoryRetrieve:
 
     def test_top_k_clamped(self):
         """top_k 超出範圍應被 clamp 而不是拋出例外。"""
-        with patch("soul_mcp.tools.memory.EmbeddingService", side_effect=ImportError("mock")):
+        with patch("soul.core.agent.EmbeddingService", side_effect=ImportError("mock")):
             from soul_mcp.tools.memory import soul_memory_retrieve
             # 不拋出例外即可
             result = soul_memory_retrieve("test", top_k=999)

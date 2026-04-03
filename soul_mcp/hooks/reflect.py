@@ -2,11 +2,12 @@
 """
 soul_mcp/hooks/reflect.py
 
-定時省思腳本：每 4 小時使用 Claude API 回顧近期情節記憶，
-生成 ARIA 的自我筆記，寫入 workspace/soul_notes.json 與
-workspace/soul_reflections.json。
+定時省思腳本：每 4 小時讀取 soul_notes.json 的「小筆記」，
+用 Claude 濃縮成日反思（大筆記），寫入 soul_reflections.json。
 
-替代 OpenSoul 原有的即時 SoulNote 機制（作為 Claude plugin 時停用）。
+流程：
+  每次對話結束 (Stop hook) → 小筆記 → soul_notes.json
+  每 4 小時 (本腳本)       → 讀小筆記 → 濃縮 → soul_reflections.json
 
 使用方式：
     python soul_mcp/hooks/reflect.py
@@ -15,9 +16,9 @@ workspace/soul_reflections.json。
     0 */4 * * * cd /path/to/OpenSoul/OpenSoul && python soul_mcp/hooks/reflect.py
 
 前置條件：
-    1. FalkorDB 連線正常
-    2. LLM API 可用（ANTHROPIC_API_KEY 或 OPENROUTER_API_KEY）
-    3. SOUL.md 存在（不存在則自動建立）
+    1. LLM API 可用（ANTHROPIC_API_KEY 或 OPENROUTER_API_KEY）
+    2. SOUL.md 存在（不存在則自動建立）
+    3. soul_notes.json 中有未被本腳本濃縮的小筆記（否則跳過）
 """
 
 from __future__ import annotations
@@ -106,13 +107,13 @@ _REFLECT_SYSTEM_PROMPT = """\
 """
 
 _REFLECT_USER_TEMPLATE = """\
-## 最近的對話記憶（過去 {hours} 小時）
+## 今天的對話小筆記（共 {note_count} 筆）
 
-{episodes_text}
+{notes_text}
 
 ---
 
-請根據以上記憶，寫下你這段時間的內心筆記。
+請根據以上小筆記，寫下你今天的內心反思。把這些片段的觀察濃縮成一篇有脈絡的日記，找出其中的主題或情感軌跡。
 """
 
 
@@ -123,38 +124,63 @@ def _ensure_soul_md(path: Path) -> None:
         logger.info(f"[reflect] 已建立預設 SOUL.md：{path}")
 
 
-def _get_recent_episodes(graph_client, hours: int = 4) -> list[dict]:
-    """取得最近 N 小時的情節記憶，依顯著性排序。"""
-    cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+def _get_unprocessed_notes(workspace: Path, hours: int = 4) -> list[dict]:
+    """從 soul_notes.json 取得最近 N 小時、尚未被反思濃縮過的小筆記。"""
+    notes_file = workspace / "soul_notes.json"
+    if not notes_file.exists():
+        return []
 
-    # FalkorDB：字串時間戳比較（ISO 格式可直接字典序比較）
-    result = graph_client.episodic.ro_query(
-        "MATCH (e:Episode) WHERE e.timestamp >= $cutoff "
-        "RETURN e ORDER BY e.salience_score DESC, e.da_weight DESC LIMIT 20",
-        params={"cutoff": cutoff},
-    )
+    try:
+        data = json.loads(notes_file.read_text(encoding="utf-8"))
+        all_notes = data.get("notes", [])
+    except Exception as e:
+        logger.warning(f"[reflect] 讀取 soul_notes.json 失敗：{e}")
+        return []
 
-    episodes = []
-    for row in result.result_set:
-        props = row[0].properties if hasattr(row[0], "properties") else {}
-        episodes.append(props)
-    return episodes
+    cutoff = datetime.now() - timedelta(hours=hours)
+    cutoff_str = cutoff.strftime("%Y-%m-%dT%H:%M:%S")
+
+    # 只取 stop_hook 產生的小筆記，且在時間窗口內，且未被標記為已濃縮
+    pending = [
+        n for n in all_notes
+        if n.get("timestamp", "") >= cutoff_str
+        and n.get("metadata", {}).get("source") == "stop_hook"
+        and not n.get("metadata", {}).get("reflected", False)
+    ]
+    return pending
 
 
-def _format_episodes_for_prompt(episodes: list[dict]) -> str:
-    """將情節列表格式化為自然語言描述（不暴露技術欄位）。"""
-    if not episodes:
-        return "這段時間沒有新的對話記錄。"
+def _mark_notes_reflected(workspace: Path, note_timestamps: list[str]) -> None:
+    """將已濃縮的小筆記標記 reflected=True，避免重複處理。"""
+    notes_file = workspace / "soul_notes.json"
+    if not notes_file.exists():
+        return
+    try:
+        data = json.loads(notes_file.read_text(encoding="utf-8"))
+        ts_set = set(note_timestamps)
+        for n in data.get("notes", []):
+            if n.get("timestamp") in ts_set:
+                if n.get("metadata") is None:
+                    n["metadata"] = {}
+                n["metadata"]["reflected"] = True
+        notes_file.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    except Exception as e:
+        logger.warning(f"[reflect] 標記 reflected 失敗：{e}")
+
+
+def _format_notes_for_prompt(notes: list[dict]) -> str:
+    """將小筆記列表格式化為 prompt 輸入。"""
+    if not notes:
+        return "這段時間沒有對話筆記。"
 
     parts = []
-    for i, ep in enumerate(episodes[:10], 1):
-        user = ep.get("user_input", "")[:200]
-        agent = ep.get("agent_response", "")[:200]
-        ts = ep.get("timestamp", "")[:16].replace("T", " ")
-        if user and agent:
-            parts.append(f"{i}. [{ts}]\n   使用者：{user}\n   我：{agent}")
+    for i, note in enumerate(notes, 1):
+        ts = note.get("timestamp", "")[:16].replace("T", " ")
+        content = note.get("content", "").strip()
+        if content:
+            parts.append(f"{i}. [{ts}]\n{content}")
 
-    return "\n\n".join(parts) if parts else "這段時間沒有對話內容可回顧。"
+    return "\n\n".join(parts) if parts else "沒有可回顧的筆記內容。"
 
 
 def _call_llm(system_prompt: str, user_prompt: str) -> str:
@@ -193,7 +219,7 @@ def _call_llm(system_prompt: str, user_prompt: str) -> str:
 def main() -> None:
     logger.info("[reflect] 開始定時省思...")
 
-    # ── 前置條件：SOUL.md ────────────────────────────────────────────────────
+    # ── 前置條件：SOUL.md + workspace ───────────────────────────────────────
     try:
         from soul.core.config import settings
         soul_path = settings.soul_md_path
@@ -204,21 +230,18 @@ def main() -> None:
 
     _ensure_soul_md(soul_path)
 
-    # ── 前置條件：FalkorDB ───────────────────────────────────────────────────
-    try:
-        from soul.memory.graph import get_graph_client
-        graph_client = get_graph_client()
-        if not graph_client.ping():
-            raise ConnectionError("ping 回傳 False")
-        logger.info("[reflect] FalkorDB 連線正常")
-    except Exception as e:
-        logger.error(f"[reflect] FalkorDB 無法連線：{e}，請執行 docker-compose up -d")
-        sys.exit(1)
+    # ── 讀取待濃縮的小筆記 ──────────────────────────────────────────────────
+    pending_notes = _get_unprocessed_notes(workspace, hours=4)
+    logger.info(f"[reflect] 找到 {len(pending_notes)} 筆待濃縮小筆記")
 
-    # ── 前置條件：LLM API（測試可呼叫）─────────────────────────────────────
+    if not pending_notes:
+        logger.info("[reflect] 沒有新的小筆記，跳過本次省思。")
+        return
+
+    # ── 前置條件：LLM API ────────────────────────────────────────────────────
     try:
         from soul.core.config import settings as cfg
-        if cfg.soul_llm_provider.lower() == "openrouter":
+        if cfg.soul_utility_llm_provider.lower() == "openrouter":
             if not cfg.openrouter_api_key:
                 raise ValueError("OPENROUTER_API_KEY 未設定")
         else:
@@ -234,54 +257,41 @@ def main() -> None:
     soul = loader.load()
     logger.info(f"[reflect] 人格載入：{soul.name}")
 
-    # ── 取得近期情節 ─────────────────────────────────────────────────────────
-    episodes = _get_recent_episodes(graph_client, hours=4)
-    logger.info(f"[reflect] 找到 {len(episodes)} 個近期情節")
+    # ── 格式化小筆記為 prompt ────────────────────────────────────────────────
+    notes_text = _format_notes_for_prompt(pending_notes)
 
-    episodes_text = _format_episodes_for_prompt(episodes)
-
-    # ── 在系統 prompt 中加入人格（SOUL.md body）────────────────────────────
     system_prompt = f"{soul.body.strip()}\n\n{_REFLECT_SYSTEM_PROMPT}"
     user_prompt = _REFLECT_USER_TEMPLATE.format(
-        hours=4,
-        episodes_text=episodes_text,
+        note_count=len(pending_notes),
+        notes_text=notes_text,
     )
 
-    # ── 呼叫 Claude 生成省思 ──────────────────────────────────────────────────
-    logger.info("[reflect] 呼叫 Claude 生成省思內容...")
+    # ── 呼叫 Claude 生成日反思 ───────────────────────────────────────────────
+    logger.info(f"[reflect] 呼叫 Claude 濃縮 {len(pending_notes)} 筆小筆記...")
     try:
         reflection_content = _call_llm(system_prompt, user_prompt)
-        logger.info(f"[reflect] 省思生成完成（{len(reflection_content)} 字）")
+        logger.info(f"[reflect] 日反思生成完成（{len(reflection_content)} 字）")
     except Exception as e:
         logger.error(f"[reflect] LLM 呼叫失敗：{e}")
         sys.exit(1)
 
-    # ── 寫入 SoulNoteManager ──────────────────────────────────────────────────
+    # ── 寫入日反思（soul_reflections.json）──────────────────────────────────
     from soul.core.soul_note import SoulNoteManager
 
     manager = SoulNoteManager(soul_dir=workspace)
-
-    # 寫入「小筆記」（即時可見）
-    ts = manager.add_note(
-        content=reflection_content,
-        category="reflection",
-        metadata={
-            "episode_count": len(episodes),
-            "generated_by": "claude_reflect_hook",
-            "model": cfg.soul_llm_model,
-        },
-        tags=["periodic", "4h_reflection"],
-    )
-
-    # 壓縮為今日反思（custom_content = Claude 的省思，不做算法拼接）
     today = datetime.now().strftime("%Y-%m-%d")
     manager.compress_daily_reflection(
         target_date=today,
         merge_existing=True,
         custom_content=reflection_content,
     )
+    logger.info(f"[reflect] 日反思已寫入 soul_reflections.json (date={today})")
 
-    logger.info(f"[reflect] 省思已寫入 soul_notes.json (ts={ts})")
+    # ── 標記已濃縮的小筆記 ──────────────────────────────────────────────────
+    processed_ts = [n["timestamp"] for n in pending_notes]
+    _mark_notes_reflected(workspace, processed_ts)
+    logger.info(f"[reflect] 已標記 {len(processed_ts)} 筆小筆記為 reflected=True")
+
     logger.info("[reflect] 完成。")
 
 

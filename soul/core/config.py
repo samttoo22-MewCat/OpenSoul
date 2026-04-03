@@ -24,9 +24,9 @@ class Settings(BaseSettings):
     soul_llm_provider: str = Field("anthropic", alias="SOUL_LLM_PROVIDER")
 
     # Utility LLM：用於小功能（SubconsciousAssessor、reflect、dream、judge）
-    # 預設使用 OpenRouter + Qwen（成本低、速度快），與主對話模型分離
+    # 預設使用 OpenRouter + Gemini（成本低、速度快），與主對話模型分離
     soul_utility_llm_provider: str = Field("openrouter", alias="SOUL_UTILITY_LLM_PROVIDER")
-    soul_utility_llm_model: str = Field("qwen/qwen3.5-35b-a3b", alias="SOUL_UTILITY_LLM_MODEL")
+    soul_utility_llm_model: str = Field("google/gemini-3.1-flash-lite-preview", alias="SOUL_UTILITY_LLM_MODEL")
 
     # Anthropic
     anthropic_api_key: str = Field("", alias="ANTHROPIC_API_KEY")
@@ -91,7 +91,12 @@ class Settings(BaseSettings):
 
     @property
     def workspace_path(self) -> Path:
-        return Path(self.soul_workspace_path)
+        p = Path(self.soul_workspace_path)
+        if not p.is_absolute():
+            # 基於 config.py 的位置計算絕對路徑，避免 CWD 差異
+            _project_root = Path(__file__).resolve().parents[2]  # soul/core → soul → OpenSoul
+            return (_project_root / p).resolve()
+        return p
 
     @property
     def soul_md_path(self) -> Path:

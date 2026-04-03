@@ -112,13 +112,24 @@ if not _IMPORTED_FROM_SETUP_ENV:
     def detect_docker() -> bool:  # type: ignore[no-redef]
         docker_bin = find_docker_bin()
         if not docker_bin:
+            err("找不到 docker 執行檔（嘗試了 PATH、/usr/local/bin、/opt/homebrew/bin）")
             return False
+        info(f"找到 docker：{docker_bin}")
         try:
-            r = subprocess.run([docker_bin, "info"], capture_output=True)
+            r = subprocess.run([docker_bin, "info"], capture_output=True, text=True)
             if r.returncode == 0:
+                # 只印 Server Version 那行
+                for line in r.stdout.splitlines():
+                    if "Server Version" in line or "Server:" in line:
+                        info(f"docker info: {line.strip()}")
+                        break
                 return True
-        except Exception:
-            return False
+            else:
+                info(f"docker info 回傳非零（{r.returncode}），daemon 可能未啟動")
+                if r.stderr:
+                    info(f"docker info stderr: {r.stderr.strip()[:200]}")
+        except Exception as exc:
+            info(f"docker info 執行失敗：{exc}")
         if platform.system() == "Darwin":
             desktop = Path("/Applications/Docker.app")
             if desktop.exists():
@@ -127,12 +138,16 @@ if not _IMPORTED_FROM_SETUP_ENV:
                 start = time.time()
                 while time.time() - start < 60:
                     time.sleep(2)
+                    elapsed = int(time.time() - start)
                     try:
-                        if subprocess.run([docker_bin, "info"], capture_output=True).returncode == 0:
-                            ok("Docker Desktop 已就緒")
+                        r2 = subprocess.run([docker_bin, "info"], capture_output=True, text=True)
+                        if r2.returncode == 0:
+                            ok(f"Docker Desktop 已就緒（等待 {elapsed}s）")
                             return True
                     except Exception:
                         pass
+                    if elapsed % 10 == 0:
+                        info(f"等待 Docker Desktop 啟動中… ({elapsed}s / 60s)")
                 err("等待 Docker Desktop 逾時（60s）")
         return False
 
@@ -140,13 +155,21 @@ if not _IMPORTED_FROM_SETUP_ENV:
         docker_bin = find_docker_bin()
         if docker_bin:
             try:
-                if subprocess.run([docker_bin, "compose", "version"], capture_output=True).returncode == 0:
+                r = subprocess.run([docker_bin, "compose", "version"], capture_output=True, text=True)
+                if r.returncode == 0:
+                    ver = r.stdout.strip().splitlines()[0] if r.stdout.strip() else "(unknown)"
+                    info(f"使用 docker compose 插件：{ver}")
                     return [docker_bin, "compose"]
-            except Exception:
-                pass
+            except Exception as exc:
+                info(f"docker compose version 失敗：{exc}")
         dc_bin = shutil.which("docker-compose")
-        if dc_bin and subprocess.run([dc_bin, "version"], capture_output=True).returncode == 0:
-            return [dc_bin]
+        if dc_bin:
+            r2 = subprocess.run([dc_bin, "version"], capture_output=True, text=True)
+            if r2.returncode == 0:
+                ver2 = r2.stdout.strip().splitlines()[0] if r2.stdout.strip() else "(unknown)"
+                info(f"使用獨立 docker-compose：{ver2}")
+                return [dc_bin]
+        err("找不到 docker compose 或 docker-compose")
         return None
 
     def check_port(host: str, port: int) -> bool:  # type: ignore[no-redef]
@@ -160,12 +183,20 @@ if not _IMPORTED_FROM_SETUP_ENV:
             return False
 
     def wait_for_falkordb(timeout: int = 60) -> bool:  # type: ignore[no-redef]
-        info(f"等待 FalkorDB 就緒（最多 {timeout}s）…")
+        info(f"等待 FalkorDB 就緒（最多 {timeout}s，{FALKORDB_HOST}:{FALKORDB_PORT}）…")
         start = time.time()
+        last_report = 0
         while time.time() - start < timeout:
             if check_port(FALKORDB_HOST, FALKORDB_PORT):
+                elapsed = int(time.time() - start)
+                ok(f"FalkorDB 連線成功（等待 {elapsed}s）")
                 return True
+            elapsed = int(time.time() - start)
+            if elapsed - last_report >= 10:
+                info(f"仍在等待 FalkorDB… ({elapsed}s / {timeout}s)")
+                last_report = elapsed
             time.sleep(1)
+        err(f"等待 FalkorDB 逾時（{timeout}s）")
         return False
 
 
@@ -184,14 +215,21 @@ def start_falkordb() -> bool:
         err("找不到 docker compose，請安裝 Docker Compose。")
         return False
 
-    info("啟動 FalkorDB 容器…")
-    result = subprocess.run(
-        compose_cmd + ["-f", str(COMPOSE_FILE), "up", "-d", "falkordb"],
-        capture_output=True, text=True,
-    )
+    cmd = compose_cmd + ["-f", str(COMPOSE_FILE), "up", "-d", "falkordb"]
+    info(f"啟動 FalkorDB 容器…  指令：{' '.join(cmd)}")
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.stdout.strip():
+        for line in result.stdout.strip().splitlines():
+            info(f"  [compose] {line}")
     if result.returncode != 0:
-        err(f"docker compose up 失敗：{result.stderr[:300]}")
+        err(f"docker compose up 失敗（exit {result.returncode}）")
+        if result.stderr.strip():
+            for line in result.stderr.strip().splitlines():
+                err(f"  [compose stderr] {line}")
         return False
+    if result.stderr.strip():
+        for line in result.stderr.strip().splitlines():
+            info(f"  [compose] {line}")
 
     if wait_for_falkordb(timeout=60):
         ok("FalkorDB 啟動成功（localhost:6379）")
@@ -229,14 +267,21 @@ def stop_falkordb() -> None:
     if not compose_cmd:
         err("找不到 docker compose")
         return
-    subprocess.run(compose_cmd + ["-f", str(COMPOSE_FILE), "down"], check=False)
+    cmd = compose_cmd + ["-f", str(COMPOSE_FILE), "down"]
+    info(f"停止 FalkorDB 容器…  指令：{' '.join(cmd)}")
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    for line in (result.stdout + result.stderr).strip().splitlines():
+        info(f"  [compose] {line}")
     ok("FalkorDB 容器已停止")
 
 
 def stop_all() -> None:
-    """同時停止 MCP server 與 FalkorDB。"""
+    """同時停止 MCP server、FalkorDB，並從 Claude Code 移除 MCP 登記。"""
     stop_mcp_server()
     stop_falkordb()
+    # 關閉時必須移除 Claude Code 中的 MCP 設定，避免 Claude Code 嘗試連線已停止的 server
+    info("正在從 Claude Code 移除 opensoul MCP 登記…")
+    disable_claude_code()
 
 
 # ── Claude Code MCP 開關 ───────────────────────────────────────────────────────

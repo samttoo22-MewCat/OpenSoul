@@ -27,6 +27,26 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
+# ── 同步 Claude Code 的 model 設定到 OpenSoul ────────────────────────────────────
+import os as _os
+import json as _json
+_claude_cfg = Path.home() / ".claude" / "settings.json"
+if _claude_cfg.exists():
+    try:
+        _claude_model = _json.loads(_claude_cfg.read_text()).get("model", "")
+        _MODEL_MAP = {
+            "haiku":  "claude-haiku-4-5-20251001",
+            "sonnet": "claude-sonnet-4-6",
+            "opus":   "claude-opus-4-6",
+        }
+        if _claude_model in _MODEL_MAP:
+            _os.environ.setdefault("SOUL_LLM_MODEL", _MODEL_MAP[_claude_model])
+            # 不強制設定 SOUL_LLM_PROVIDER：由 .env 決定
+            # （若設為 "anthropic"，load_dotenv(override=False) 無法覆蓋，
+            #   EmbeddingService 會改用 OPENAI_BASE_URL=host.docker.internal → 連線失敗）
+    except Exception:
+        pass  # Claude settings 讀取失敗，使用預設
+
 _DEFAULT_SOUL_MD = """\
 ---
 name: ARIA
@@ -117,11 +137,13 @@ def _read_last_exchange(transcript_path: str) -> tuple[str, str]:
                     continue
                 try:
                     obj = json.loads(line)
-                    # transcript 格式可能是 {"role": ..., "content": ...}
-                    # 或 {"type": "message", "message": {"role": ..., "content": ...}}
+                    # transcript 格式可能是：
+                    # 1. {"role": ..., "content": ...}
+                    # 2. {"type": "message", "message": {"role": ..., "content": ...}}
+                    # 3. {"type": "user"/"assistant", "message": {"role": ..., "content": ...}}（Claude Code 實際格式）
                     if "role" in obj:
                         messages.append(obj)
-                    elif obj.get("type") == "message" and "message" in obj:
+                    elif "message" in obj and isinstance(obj.get("message"), dict) and "role" in obj["message"]:
                         messages.append(obj["message"])
                 except json.JSONDecodeError:
                     continue
@@ -150,7 +172,8 @@ def main() -> None:
     # ── 讀取 hook 輸入 ────────────────────────────────────────────────────────
     try:
         data = json.load(sys.stdin)
-    except Exception:
+    except Exception as e:
+        print(f"[write_memory DEBUG] stdin 解析失敗: {e}", file=sys.stderr)
         sys.exit(0)
 
     # 防止無限迴圈（Stop hook 觸發自身）
@@ -163,6 +186,7 @@ def main() -> None:
     # ── 取出最後一輪對話 ──────────────────────────────────────────────────────
     user_msg, assistant_msg = _read_last_exchange(transcript_path)
     if not user_msg or not assistant_msg:
+        print(f"[write_memory DEBUG] transcript 無效對話: user_msg={bool(user_msg)}, assistant_msg={bool(assistant_msg)}, path={transcript_path}", file=sys.stderr)
         sys.exit(0)  # 沒有有效對話，不寫入
 
     # ── 前置條件 1：確認 SOUL.md ──────────────────────────────────────────────
@@ -182,7 +206,7 @@ def main() -> None:
             raise ConnectionError("ping 回傳 False")
         initialize_schemas(graph_client)
     except Exception as e:
-        # Stop hook 失敗不報錯到 stderr（避免嚇到使用者），靜默退出
+        print(f"[write_memory DEBUG] FalkorDB 失敗: {type(e).__name__}: {e}", file=sys.stderr)
         sys.exit(0)
 
     # ── 前置條件 3：Embedding API ─────────────────────────────────────────────
@@ -191,7 +215,8 @@ def main() -> None:
         emb_svc = EmbeddingService()
         content_for_embed = f"{user_msg} {assistant_msg}"
         embedding = emb_svc.embed(content_for_embed)
-    except Exception:
+    except Exception as e:
+        print(f"[write_memory DEBUG] Embedding API 失敗: {type(e).__name__}: {e}", file=sys.stderr)
         sys.exit(0)
 
     # ── 載入神經化學狀態（SOUL.md）────────────────────────────────────────────
@@ -204,6 +229,9 @@ def main() -> None:
     # ── 顯著性評估（SubconsciousAssessor LLM call）────────────────────────────
     from soul.affect.salience import SalienceEvaluator, SalienceSignals
     salience_eval = SalienceEvaluator()
+
+    _llm_client = None  # 提升到外部 scope，供 soul note 生成複用
+    cfg = None
 
     try:
         from soul.affect.subconscious import SubconsciousAssessor
@@ -229,7 +257,8 @@ def main() -> None:
             novelty_score=assessment.novelty,
             error_occurred=assessment.uncertainty > 0.7,
         )
-    except Exception:
+    except Exception as e:
+        print(f"[write_memory DEBUG] 顯著性評估失敗（使用預設值）: {type(e).__name__}: {e}", file=sys.stderr)
         signals = SalienceSignals(task_complexity=0.5, novelty_score=0.4, error_occurred=False)
 
     try:
@@ -239,7 +268,8 @@ def main() -> None:
             user_message=user_msg,
             agent_response=assistant_msg,
         )
-    except Exception:
+    except Exception as e:
+        print(f"[write_memory DEBUG] 顯著性計算失敗（使用預設值）: {type(e).__name__}: {e}", file=sys.stderr)
         salience, da_weight, ht_weight = 0.5, neuro.dopamine, neuro.serotonin
 
     # ── 情節記憶寫入（EpisodicMemory）────────────────────────────────────────
@@ -257,8 +287,72 @@ def main() -> None:
             ht_weight=ht_weight,
             salience_score=salience,
         )
-    except Exception:
-        pass  # 情節寫入失敗不中止，繼續嘗試更新神經化學
+    except Exception as e:
+        print(f"[write_memory DEBUG] 情節記憶寫入失敗: {type(e).__name__}: {e}", file=sys.stderr)
+
+    # ── Soul Note 生成 ────────────────────────────────────────────────────────
+    try:
+        from soul.core.soul_note import SoulNoteManager
+        from soul.core.config import settings as _cfg
+
+        # 跨 OS 安全：從 __file__ 絕對路徑推導 workspace，不依賴 CWD
+        # _PROJECT_ROOT = .../OpenSoul/OpenSoul，workspace 在上一層
+        _workspace = _PROJECT_ROOT.parent / "workspace"
+        _workspace.mkdir(parents=True, exist_ok=True)
+
+        _note_provider = _cfg.soul_utility_llm_provider
+        _note_model = _cfg.soul_utility_llm_model
+        _note_llm = _llm_client  # 複用已建立的 client，若為 None 則重新建立
+
+        if _note_llm is None:
+            if _note_provider.lower() == "openrouter":
+                from openai import OpenAI
+                _note_llm = OpenAI(
+                    api_key=_cfg.openrouter_api_key,
+                    base_url=_cfg.openrouter_base_url,
+                )
+            else:
+                import anthropic as _anthropic
+                _note_llm = _anthropic.Anthropic(api_key=_cfg.anthropic_api_key)
+
+        _soul_note_prompt = (
+            "你現在是 ARIA 的深層潛意識。\n"
+            f"剛剛發生了一次對話，當前你的神經化學狀態為：{neuro.mode.value}\n"
+            f"用戶輸入：{user_msg}\n"
+            f"你的回覆：{assistant_msg}\n\n"
+            "請撰寫一小段文字作為你的「潛意識筆記（soul_note）」，必須包含：\n"
+            "1. 對使用者輸入的總結\n"
+            "2. 對你自己回覆的總結\n"
+            "3. 一句表達你當下心情或內心碎碎念的話（要符合你的當前狀態）\n"
+            "格式請自然流暢，像是一篇短日記。不要輸出 JSON，直接輸出文字即可。"
+        )
+
+        if _note_provider.lower() == "openrouter":
+            _resp = _note_llm.chat.completions.create(
+                model=_note_model,
+                max_tokens=300,
+                messages=[{"role": "user", "content": _soul_note_prompt}],
+            )
+            _note_text = _resp.choices[0].message.content or ""
+        else:
+            _resp = _note_llm.messages.create(
+                model=_note_model,
+                max_tokens=300,
+                messages=[{"role": "user", "content": _soul_note_prompt}],
+            )
+            _note_text = _resp.content[0].text
+
+        if _note_text:
+            _note_text = _note_text.replace("\n", "  ").strip()
+            SoulNoteManager(soul_dir=_workspace).add_note(
+                content=_note_text,
+                category="reflection",
+                metadata={"source": "stop_hook", "neurochem_mode": neuro.mode.value},
+            )
+            print(f"[write_memory DEBUG] soul note 已寫入（{len(_note_text)} 字）", file=sys.stderr)
+
+    except Exception as e:
+        print(f"[write_memory DEBUG] soul note 生成失敗: {type(e).__name__}: {e}", file=sys.stderr)
 
     # ── 語意記憶：背景概念提取 ────────────────────────────────────────────────
     # 使用 SoulAgent 的 _extract_concepts_bg，需要完整初始化
@@ -279,8 +373,8 @@ def main() -> None:
         )
         t.start()
         t.join(timeout=20)   # 最多等 20 秒
-    except Exception:
-        pass  # 概念提取失敗不致命
+    except Exception as e:
+        print(f"[write_memory DEBUG] 概念提取失敗: {type(e).__name__}: {e}", file=sys.stderr)
 
     # ── 神經化學更新 ──────────────────────────────────────────────────────────
     try:
@@ -288,8 +382,8 @@ def main() -> None:
         salience_eval = SalienceEvaluator()
         salience_eval.update_neurochem(neuro, signals)
         loader.save_neurochem(neuro)
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[write_memory DEBUG] 神經化學更新失敗: {type(e).__name__}: {e}", file=sys.stderr)
 
     sys.exit(0)
 

@@ -699,16 +699,18 @@ class SoulAgent:
         )
 
         try:
-            if self._provider == "openrouter":
+            _util_provider = settings.soul_utility_llm_provider.lower()
+            _util_model = settings.soul_utility_llm_model
+            if _util_provider == "openrouter":
                 resp = self._llm.chat.completions.create(
-                    model=self._model,
+                    model=_util_model,
                     max_tokens=300,
                     messages=[{"role": "user", "content": prompt}],
                 )
                 raw = resp.choices[0].message.content or "[]"
             else:
                 msg = self._llm.messages.create(
-                    model=self._model,
+                    model=_util_model,
                     max_tokens=300,
                     messages=[{"role": "user", "content": prompt}],
                 )
@@ -831,16 +833,17 @@ class SoulAgent:
         )
         
         try:
+            _util_model = settings.soul_utility_llm_model
             if self._provider == "openrouter":
                 resp = self._llm.chat.completions.create(
-                    model=self._model,
+                    model=_util_model,
                     max_tokens=300,
                     messages=[{"role": "user", "content": prompt}],
                 )
                 note = resp.choices[0].message.content or ""
             else:
                 msg = self._llm.messages.create(
-                    model=self._model,
+                    model=_util_model,
                     max_tokens=300,
                     messages=[{"role": "user", "content": prompt}],
                 )

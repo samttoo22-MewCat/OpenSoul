@@ -16,8 +16,9 @@ openSOUL CLI：基於 Typer + Rich 的命令列介面。
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated, Optional, Any
 
 import typer
 from rich import print as rprint
@@ -32,7 +33,9 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 memory_app = typer.Typer(help="記憶圖譜操作指令")
+notes_app = typer.Typer(help="反思筆記操作指令")
 app.add_typer(memory_app, name="memory")
+app.add_typer(notes_app, name="notes")
 
 console = Console()
 
@@ -314,6 +317,209 @@ def memory_prune() -> None:
             console.print(f"  [dim]{d}[/dim]")
     except Exception as exc:
         console.print(f"[red]修剪失敗：{exc}[/red]")
+        raise typer.Exit(1)
+
+
+@memory_app.command("clear")
+def memory_clear(
+    confirm: Annotated[bool, typer.Option("--yes", "-y", help="跳過確認，直接清空")] = False,
+) -> None:
+    """清空所有 OpenSoul 資料（圖譜、日誌、反思筆記）。此操作不可逆！"""
+    if not confirm:
+        console.print("[yellow]⚠️  警告：此操作將清空所有記憶圖譜、日誌和反思筆記，且無法撤銷！[/yellow]")
+        response = console.input("[bold]確認清空？(yes/no)[/bold] ").strip().lower()
+        if response not in ("yes", "y"):
+            console.print("[dim]已取消[/dim]")
+            return
+
+    console.print("[dim]正在清空所有資料...[/dim]")
+    try:
+        import shutil
+        from soul.memory.graph import get_graph_client
+
+        # 清空記憶圖譜
+        client = get_graph_client()
+        results = client.clear_all()
+        console.print("[green]✓[/green] 記憶圖譜已清空")
+        for graph_name, deleted_count in results.items():
+            console.print(f"  {graph_name}: 刪除 {deleted_count} 個節點")
+
+        # 清空反思筆記和日誌
+        workspace = Path("./workspace")
+        files_to_delete = [
+            workspace / "soul_notes.json",
+            workspace / "soul_reflections.json",
+        ]
+        dirs_to_delete = [
+            workspace / "daily_logs",
+        ]
+
+        for file_path in files_to_delete:
+            if file_path.exists():
+                file_path.unlink()
+                console.print(f"[green]✓[/green] 刪除檔案: {file_path.name}")
+
+        for dir_path in dirs_to_delete:
+            if dir_path.exists():
+                shutil.rmtree(dir_path)
+                console.print(f"[green]✓[/green] 刪除目錄: {dir_path.name}")
+
+        console.print("[bold green]✓ 所有資料清空完成！[/bold green]")
+    except Exception as exc:
+        console.print(f"[red]清空失敗：{exc}[/red]")
+        raise typer.Exit(1)
+
+
+# ── soul notes ───────────────────────────────────────────────────────────────
+
+@notes_app.command("view")
+def notes_view(
+    date: Annotated[Optional[str], typer.Option("--date", "-d", help="指定日期 (YYYY-MM-DD)，不指定則顯示今日")] = None,
+    category: Annotated[Optional[str], typer.Option("--category", "-c", help="按類別篩選 (reflection/discovery/error/memory_update)")] = None,
+) -> None:
+    """查看反思筆記與小筆記。"""
+    from soul.core.soul_note import SoulNoteManager
+    from soul.core.config import settings
+
+    try:
+        workspace = settings.workspace_path
+        workspace.mkdir(parents=True, exist_ok=True)
+
+        manager = SoulNoteManager(soul_dir=workspace)
+
+        # 獲取反思與筆記
+        all_reflections = manager.get_all_reflections()
+        all_notes = manager.get_all_notes()
+
+        if date:
+            # 指定日期的筆記
+            day_notes = [n for n in all_notes if n["timestamp"].startswith(date)]
+            day_reflections = [r for r in all_reflections if r["date"] == date]
+        else:
+            # 今日的筆記
+            today = datetime.now().strftime("%Y-%m-%d")
+            day_notes = [n for n in all_notes if n["timestamp"].startswith(today)]
+            day_reflections = [r for r in all_reflections if r["date"] == today]
+
+        # 按類別篩選
+        if category:
+            day_notes = [n for n in day_notes if n["category"] == category]
+
+        date_str = date or datetime.now().strftime("%Y-%m-%d")
+
+        # 顯示當日反思
+        if day_reflections:
+            console.print(f"\n[bold cyan]📖 {date_str} 日反思[/bold cyan]")
+            for reflection in day_reflections:
+                # 檢測反思與作夢標記
+                has_reflection = "reflection" in reflection.get("categories", [])
+                has_dream = reflection.get("has_dream", False) or reflection.get("dream_count", 0) > 0
+
+                # 構建標記
+                tags = []
+                if has_reflection:
+                    tags.append("[cyan]💭 反思[/cyan]")
+                if has_dream:
+                    tags.append("[purple]💤 作夢[/purple]")
+
+                tags_str = " ".join(tags) if tags else ""
+
+                console.print(f"[dim]v{reflection.get('version', 1)} • {reflection['timestamp']}[/dim]")
+                if tags_str:
+                    console.print(f"  {tags_str}")
+                console.print(f"[dim]包含 {reflection['note_count']} 筆筆記，共 {reflection['original_note_count']} 原始筆記[/dim]")
+                console.print(reflection["content"])
+                console.print()
+
+        # 顯示小筆記
+        if day_notes:
+            console.print(f"\n[bold cyan]📝 {date_str} 小筆記[/bold cyan] ({len(day_notes)} 筆)")
+            table = Table(show_header=True)
+            table.add_column("時間", style="dim")
+            table.add_column("類別", style="yellow")
+            table.add_column("內容", overflow="fold")
+
+            for note in day_notes:
+                timestamp = note["timestamp"].split("T")[1][:5] if "T" in note["timestamp"] else note["timestamp"]
+                category_val = note.get("category", "unknown")
+                content = note["content"][:60]
+                table.add_row(timestamp, category_val, content)
+
+            console.print(table)
+
+        if not day_notes and not day_reflections:
+            console.print(f"[dim]{date_str} 沒有筆記或反思[/dim]")
+
+    except Exception as exc:
+        console.print(f"[red]讀取筆記失敗：{exc}[/red]")
+        raise typer.Exit(1)
+
+
+@notes_app.command("list")
+def notes_list(
+    limit: Annotated[int, typer.Option("--limit", "-n", help="顯示最近 N 條反思")] = 10,
+) -> None:
+    """列出最近的反思筆記與統計。"""
+    from soul.core.soul_note import SoulNoteManager
+    from soul.core.config import settings
+
+    try:
+        workspace = settings.workspace_path
+        workspace.mkdir(parents=True, exist_ok=True)
+
+        manager = SoulNoteManager(soul_dir=workspace)
+
+        all_reflections = manager.get_all_reflections()
+        all_notes = manager.get_all_notes()
+
+        console.print(f"\n[bold cyan]📊 反思筆記統計[/bold cyan]")
+        console.print(f"  反思筆記：{len(all_reflections)} 篇")
+        console.print(f"  小筆記總數：{len(all_notes)} 筆")
+
+        if all_notes:
+            # 統計類別分佈
+            categories = {}
+            for note in all_notes:
+                cat = note.get("category", "unknown")
+                categories[cat] = categories.get(cat, 0) + 1
+
+            console.print(f"\n[bold]類別分佈：[/bold]")
+            for cat, count in sorted(categories.items()):
+                console.print(f"  {cat}: {count} 筆")
+
+        if all_reflections:
+            console.print(f"\n[bold]最近 {min(limit, len(all_reflections))} 篇反思：[/bold]")
+            table = Table(show_header=True)
+            table.add_column("日期", style="cyan")
+            table.add_column("版本", justify="right")
+            table.add_column("筆記數", justify="right")
+            table.add_column("標記", style="yellow")
+            table.add_column("時間", style="dim")
+
+            for reflection in all_reflections[-limit:]:
+                date_str = reflection["date"]
+                version = reflection.get("version", 1)
+                note_count = reflection["note_count"]
+                timestamp = reflection["timestamp"].split("T")[0]
+
+                # 檢測反思與作夢標記
+                has_reflection = "reflection" in reflection.get("categories", [])
+                has_dream = reflection.get("has_dream", False) or reflection.get("dream_count", 0) > 0
+
+                tags = []
+                if has_reflection:
+                    tags.append("💭")
+                if has_dream:
+                    tags.append("💤")
+
+                tags_str = " ".join(tags) if tags else "-"
+
+                table.add_row(date_str, str(version), str(note_count), tags_str, timestamp)
+
+            console.print(table)
+
+    except Exception as exc:
+        console.print(f"[red]讀取筆記失敗：{exc}[/red]")
         raise typer.Exit(1)
 
 

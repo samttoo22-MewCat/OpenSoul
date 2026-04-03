@@ -8,7 +8,7 @@ tests/test_memory.py
 from __future__ import annotations
 
 import math
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -24,7 +24,7 @@ class TestComputeEdgeWeight:
     def test_fresh_edge_high_recency(self) -> None:
         """剛建立的邊緣近期性接近 1.0。"""
         weight = compute_edge_weight(
-            last_accessed=datetime.utcnow(),
+            last_accessed=datetime.now(UTC),
             frequency=1,
             salience=0.5,
         )
@@ -32,7 +32,7 @@ class TestComputeEdgeWeight:
 
     def test_old_edge_low_recency(self) -> None:
         """30 天未存取的邊緣近期性應大幅衰減。"""
-        old_time = datetime.utcnow() - timedelta(days=30)
+        old_time = datetime.now(UTC) - timedelta(days=30)
         weight = compute_edge_weight(
             last_accessed=old_time,
             frequency=1,
@@ -44,13 +44,13 @@ class TestComputeEdgeWeight:
     def test_high_frequency_boosts_weight(self) -> None:
         """高頻存取應顯著提升權重。"""
         w_low = compute_edge_weight(
-            last_accessed=datetime.utcnow() - timedelta(hours=1),
+            last_accessed=datetime.now(UTC) - timedelta(hours=1),
             frequency=1,
             salience=0.3,
             max_frequency=100,
         )
         w_high = compute_edge_weight(
-            last_accessed=datetime.utcnow() - timedelta(hours=1),
+            last_accessed=datetime.now(UTC) - timedelta(hours=1),
             frequency=80,
             salience=0.3,
             max_frequency=100,
@@ -60,12 +60,12 @@ class TestComputeEdgeWeight:
     def test_high_salience_boosts_weight(self) -> None:
         """高情感顯著性應提升權重。"""
         w_low_sal = compute_edge_weight(
-            last_accessed=datetime.utcnow(),
+            last_accessed=datetime.now(UTC),
             frequency=5,
             salience=0.0,
         )
         w_high_sal = compute_edge_weight(
-            last_accessed=datetime.utcnow(),
+            last_accessed=datetime.now(UTC),
             frequency=5,
             salience=1.0,
         )
@@ -76,7 +76,7 @@ class TestComputeEdgeWeight:
         for freq in [0, 1, 1000]:
             for sal in [0.0, 0.5, 1.0]:
                 w = compute_edge_weight(
-                    last_accessed=datetime.utcnow(),
+                    last_accessed=datetime.now(UTC),
                     frequency=freq,
                     salience=sal,
                     max_frequency=max(freq, 1),  # 確保 freq_score <= 1.0
@@ -87,7 +87,7 @@ class TestComputeEdgeWeight:
     def test_custom_alpha_beta_gamma(self) -> None:
         """支援自訂 α β γ 參數。"""
         w = compute_edge_weight(
-            last_accessed=datetime.utcnow(),
+            last_accessed=datetime.now(UTC),
             frequency=10,
             salience=0.8,
             alpha=0.5,

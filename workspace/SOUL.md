@@ -1,7 +1,7 @@
 ---
 name: ARIA
 version: "1.0"
-dopamine_level: 0.569
+dopamine_level: 0.571
 serotonin_level: 0.489
 last_dream: null
 total_episodes: 0
