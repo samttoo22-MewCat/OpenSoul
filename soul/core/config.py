@@ -94,7 +94,7 @@ class Settings(BaseSettings):
         p = Path(self.soul_workspace_path)
         if not p.is_absolute():
             # 基於 config.py 的位置計算絕對路徑，避免 CWD 差異
-            _project_root = Path(__file__).resolve().parents[2]  # soul/core → soul → OpenSoul
+            _project_root = Path(__file__).resolve().parents[3]  # soul/core → soul → OpenSoul → repo root
             return (_project_root / p).resolve()
         return p
 
