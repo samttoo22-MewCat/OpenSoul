@@ -575,8 +575,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="OpenSoul MCP Plugin 環境設定與啟動")
     parser.add_argument("--stop",        action="store_true", help="停止 MCP server + FalkorDB")
     parser.add_argument("--status",      action="store_true", help="顯示目前狀態")
-    parser.add_argument("--cc-enable",   action="store_true", help="在 Claude Code 全域啟用 opensoul MCP")
-    parser.add_argument("--cc-disable",  action="store_true", help="從 Claude Code 全域停用 opensoul MCP")
+    parser.add_argument("--cc-enable",   action="store_true", help="在 Claude Code 全域啟用 opensoul MCP（預設行為）")
+    parser.add_argument("--cc-disable",  action="store_true", help="從 Claude Code 全域停用 opensoul MCP（並清理技能檔案）")
     parser.add_argument("--mcp-only",    action="store_true",
                         help="跳過 FalkorDB 啟動，僅執行 fastmcp 驗證與 Claude Desktop 設定（供 setup_env.py 呼叫）")
     parser.add_argument("--no-serve",    action="store_true",
@@ -593,12 +593,16 @@ def main() -> None:
         show_status()
         return
 
-    if args.cc_enable:
-        enable_claude_code()
-        return
-
     if args.cc_disable:
         disable_claude_code()
+        return
+
+    # ── 2. 主流程：預設執行 enable_claude_code ───────────────────────────────────
+    # 我們將 Skill 部署與 MCP 登記作為預設行為
+    enable_claude_code()
+
+    # 如果使用者只是想執行 enable 且不啟動 server
+    if args.cc_enable and args.no_serve:
         return
 
     mcp_only: bool = args.mcp_only
@@ -711,11 +715,6 @@ def main() -> None:
                 mcp_process.kill()
         PID_FILE.unlink(missing_ok=True)
         ok("MCP server 已停止")
-
-        # 從 Claude Code 移除 MCP 登記，讓 Claude 恢復原本狀態
-        info("正在從 Claude Code 移除 opensoul MCP 登記…")
-        disable_claude_code()
-        info("下次使用請重新執行 setup_mcp.py（或 --cc-enable）")
 
         # 同時停止 FalkorDB
         info("正在停止 FalkorDB…")
