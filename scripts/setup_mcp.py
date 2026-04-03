@@ -718,13 +718,13 @@ def main() -> None:
         disable_claude_code()
         return
 
-    # ── 2. 主流程：預設執行 enable_claude_code ───────────────────────────────────
-    # 我們將 Skill 部署與 MCP 登記作為預設行為
-    enable_claude_code()
-
-    # 如果使用者只是想執行 enable 且不啟動 server
-    if args.cc_enable and args.no_serve:
+    # ── 僅啟用 Claude Code（不啟動完整服務）───────────────────────────────────
+    if args.cc_enable:
+        enable_claude_code()
         return
+
+    # ── 預設流程：完整設定 + FalkorDB + MCP server ──────────────────────────────
+    enable_claude_code()
 
     mcp_only: bool = args.mcp_only
 

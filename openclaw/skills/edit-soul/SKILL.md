@@ -51,4 +51,12 @@ To completely rewrite your identity:
 python scripts/edit_soul_skill.py replace "FULL_YML_CONTENT_HERE"
 ```
 
+To make a **precise partial edit** (preferred for most changes):
+```bash
+python scripts/edit_soul_skill.py --command diff --old "舊的內容片段" --new "新的內容片段"
+```
+- `--old` must match the existing SOUL.md content **exactly** (including whitespace and newlines)
+- `--old` must be unique within the file; add surrounding context if needed
+- Prefer `diff` over `replace` to avoid accidentally overwriting unrelated sections
+
 *Note: This skill modifies the filesystem directly via the standard openSOUL procedure. No HTTP requests are used.*
