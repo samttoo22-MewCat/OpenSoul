@@ -11,12 +11,6 @@ import logging
 import uuid
 from typing import Any
 
-from soul.memory.graph import get_graph_client
-from soul_mcp.adapters.graph_lite import get_lite_client
-from soul.core.agent import SoulAgent
-from soul.core.config import settings
-from soul.core.session import Session
-
 logger = logging.getLogger("soul_mcp.chat")
 
 
@@ -46,6 +40,12 @@ def soul_chat(message: str, session_id: str | None = None) -> dict[str, Any]:
     """
     if not message.strip():
         return {"error": "message 不可為空"}
+
+    from soul.memory.graph import get_graph_client
+    from soul_mcp.adapters.graph_lite import get_lite_client
+    from soul.core.agent import SoulAgent
+    from soul.core.config import settings
+    from soul.core.session import Session
 
     sid = session_id or str(uuid.uuid4())
 
