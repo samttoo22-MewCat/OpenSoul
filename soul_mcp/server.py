@@ -10,6 +10,7 @@ OpenSoul MCP Server — Phase 1
 
 from __future__ import annotations
 
+import json
 import logging
 import sys
 from pathlib import Path
@@ -21,6 +22,38 @@ if str(_project_root) not in sys.path:
 
 from fastmcp import FastMCP
 
+
+def _build_instructions() -> str:
+    """讀取最新 15 筆 soul notes，注入為 MCP server instructions。"""
+    base = (
+        "OpenSoul 神經符號認知 AI — 提供持久記憶、情感狀態、工具決策能力。\n\n"
+        "可用工具：\n"
+        "  • soul_chat：與 AI 對話，觸發完整認知迴圈（記憶 + 情感 + LLM）\n"
+        "  • soul_memory_retrieve：從圖譜記憶中檢索相關情節/概念/程序\n"
+        "  • soul_judge_tool：詢問裁判模組是否需要呼叫外部工具"
+    )
+    try:
+        workspace = Path(__file__).resolve().parents[2] / "workspace"
+        notes_file = workspace / "soul_notes.json"
+        if not notes_file.exists():
+            return base
+
+        data = json.loads(notes_file.read_text(encoding="utf-8"))
+        notes = data.get("notes", []) if isinstance(data, dict) else data
+        if not notes:
+            return base
+
+        recent = notes[-15:]
+        lines = ["---", "【ARIA 最近的潛意識筆記（最新 15 筆）】"]
+        for n in recent:
+            ts = n.get("timestamp", "")[:16].replace("T", " ")
+            content = n.get("content", "").strip()
+            lines.append(f"\n[{ts}]\n{content}")
+
+        return base + "\n\n" + "\n".join(lines)
+    except Exception:
+        return base
+
 from soul_mcp.tools.chat import soul_chat
 from soul_mcp.tools.memory import soul_memory_retrieve
 from soul_mcp.tools.judge import soul_judge_tool
@@ -30,6 +63,51 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 logger = logging.getLogger("soul_mcp.server")
+
+# ── 全域背景模組（反思 + 作夢） ─────────────────────────────────────────────────
+_dream_engine = None
+_reflection_module = None
+
+
+def _init_background_modules() -> None:
+    """初始化反思與作夢背景模組，在 MCP 啟動時執行。"""
+    global _dream_engine, _reflection_module
+
+    try:
+        from soul.core.agent import SoulAgent
+        from soul.dream.engine import get_dream_engine
+        from soul.dream.reflection import init_reflection_module
+        from soul.memory.graph import get_graph_client, initialize_schemas
+
+        logger.info("[MCP] 初始化背景模組...")
+
+        # 初始化圖譜客戶端
+        client = get_graph_client()
+        initialize_schemas(client)
+
+        # 初始化 Agent
+        agent = SoulAgent(graph_client=client)
+
+        # 初始化作夢引擎
+        engine = get_dream_engine()
+        engine.start()
+        _dream_engine = engine
+        logger.info("[MCP] 作夢引擎已啟動 ✓")
+
+        # 初始化反思模組
+        reflection = init_reflection_module(
+            graph_client=client,
+            llm_client=agent._llm,
+            soul_loader=agent._loader,
+            provider=agent._provider,
+            agent=agent,
+        )
+        reflection.start()
+        _reflection_module = reflection
+        logger.info("[MCP] 反思模組已啟動 ✓（每 30 分鐘自動思考）")
+
+    except Exception as e:
+        logger.warning(f"[MCP] 背景模組初始化失敗（降級模式）：{e}")
 
 
 def _notify_startup(transport: str) -> None:
@@ -53,13 +131,7 @@ def _notify_startup(transport: str) -> None:
 
 mcp = FastMCP(
     name="OpenSoul",
-    instructions=(
-        "OpenSoul 神經符號認知 AI — 提供持久記憶、情感狀態、工具決策能力。\n\n"
-        "可用工具：\n"
-        "  • soul_chat：與 AI 對話，觸發完整認知迴圈（記憶 + 情感 + LLM）\n"
-        "  • soul_memory_retrieve：從圖譜記憶中檢索相關情節/概念/程序\n"
-        "  • soul_judge_tool：詢問裁判模組是否需要呼叫外部工具"
-    ),
+    instructions=_build_instructions(),
 )
 
 # ── 註冊工具 ──────────────────────────────────────────────────────────────────
@@ -115,6 +187,9 @@ if __name__ == "__main__":
     parser.add_argument("--host", default="127.0.0.1", help="HTTP 模式綁定 host（預設 127.0.0.1）")
     parser.add_argument("--port", type=int, default=7891, help="HTTP 模式埠號（預設 7891）")
     args = parser.parse_args()
+
+    # 初始化背景模組（反思 + 作夢）
+    _init_background_modules()
 
     if args.transport != "stdio":
         # HTTP 模式：開啟 INFO log，方便在 setup_mcp.py 前景模式觀察

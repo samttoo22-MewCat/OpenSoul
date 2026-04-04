@@ -202,8 +202,45 @@ async def lifespan(app: FastAPI):
             agent=agent,
         )
         app.state.reflection.start()
-        logger.info("openSOUL 啟動成功 ✓（含反思模組）")
-        _buf_append("INFO", "openSOUL.startup", "openSOUL 啟動成功 ✓（含反思模組）")
+
+        # 定時筆記濃縮排程（每 4 小時執行一次 reflect.py）
+        from apscheduler.schedulers.background import BackgroundScheduler
+        from apscheduler.triggers.interval import IntervalTrigger
+        import subprocess
+
+        def _run_reflect_job():
+            """背景執行 reflect.py，濃縮小筆記為日反思。"""
+            try:
+                import os
+                project_root = Path(__file__).resolve().parents[2]
+                result = subprocess.run(
+                    [sys.executable, "soul_mcp/hooks/reflect.py"],
+                    cwd=str(project_root),
+                    capture_output=True,
+                    timeout=120,
+                )
+                if result.returncode == 0:
+                    _buf_append("INFO", "openSOUL.reflect_job", "✓ 自動筆記濃縮完成")
+                else:
+                    _buf_append("WARNING", "openSOUL.reflect_job", f"筆記濃縮失敗: {result.stderr.decode()[:200]}")
+            except subprocess.TimeoutExpired:
+                _buf_append("ERROR", "openSOUL.reflect_job", "筆記濃縮逾時（>120s）")
+            except Exception as e:
+                _buf_append("ERROR", "openSOUL.reflect_job", f"執行失敗: {e}")
+
+        reflect_scheduler = BackgroundScheduler(timezone="Asia/Taipei")
+        reflect_scheduler.add_job(
+            func=_run_reflect_job,
+            trigger=IntervalTrigger(hours=4),
+            id="reflect_job",
+            replace_existing=True,
+            misfire_grace_time=60,
+        )
+        reflect_scheduler.start()
+        app.state.reflect_scheduler = reflect_scheduler
+
+        logger.info("openSOUL 啟動成功 ✓（含反思 + 筆記排程）")
+        _buf_append("INFO", "openSOUL.startup", "openSOUL 啟動成功 ✓（含反思 + 筆記排程，每 4 小時一次）")
 
     except Exception as exc:
         msg = f"啟動時發生錯誤（降級模式）：{exc}"
@@ -217,6 +254,8 @@ async def lifespan(app: FastAPI):
         app.state.dream_engine.stop()
     if getattr(app.state, "reflection", None) is not None:
         app.state.reflection.stop()
+    if getattr(app.state, "reflect_scheduler", None) is not None:
+        app.state.reflect_scheduler.shutdown(wait=False)
 
 
 def _require_agent():

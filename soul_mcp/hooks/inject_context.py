@@ -204,6 +204,29 @@ def main() -> None:
     if memory_text:
         context_parts.append(f"【記憶觸發（EcphoryRAG）】\n{memory_text}")
 
+    # 可用技能（Skills）
+    skills_info = """【可用技能 — OpenSoul 編輯與管理】
+
+當使用者要求修改 SOUL.md 或查詢系統狀態時，使用以下 skill（直接在對話中呼叫）：
+
+**編輯人格檔案：**
+- `/soul-edit` — 使用 diff 模式修改 SOUL.md 的指定片段
+  用法：`/soul-edit --command diff --old "舊文字" --new "新文字"`
+  或：`/soul-edit --command read` 查看當前內容
+
+**系統狀態與記憶：**
+- `/soul-status` — 查看 OpenSoul 當前狀態（FalkorDB、API 健康狀態等）
+- `/soul-memory` — 檢視記憶統計（情節/概念/程序節點數）
+- `/soul-memory-search <query>` — 搜尋記憶內容
+- `/soul-notes-list` — 列出最近的反思筆記
+- `/soul-dream` — 手動觸發夢境引擎（背景整理記憶）
+- `/soul-clear-db` — 清空所有記憶圖譜（危險操作，需確認）
+
+**重要：** 修改 SOUL.md 時務必使用 `/soul-edit`，而非自己建立新檔案。
+修改前請先用 `/soul-edit --command read` 確認當前內容。"""
+
+    context_parts.append(skills_info)
+
     # 程序性記憶（已學會的操作序列）
     if ctx.procedures:
         proc_lines: list[str] = []

@@ -290,71 +290,76 @@ def main() -> None:
     except Exception as e:
         print(f"[write_memory DEBUG] 情節記憶寫入失敗: {type(e).__name__}: {e}", file=sys.stderr)
 
-    # ── Soul Note 生成 ────────────────────────────────────────────────────────
-    try:
-        from soul.core.soul_note import SoulNoteManager
-        from soul.core.config import settings as _cfg
+    # ── Soul Note 生成（背景執行，不阻塞 hook 返回）─────────────────────────────
+    def _generate_soul_note_bg():
+        """背景執行 soul note 生成，不干擾 hook 返回速度。"""
+        try:
+            from soul.core.soul_note import SoulNoteManager
+            from soul.core.config import settings as _cfg
 
-        # 跨 OS 安全：從 __file__ 絕對路徑推導 workspace，不依賴 CWD
-        # _PROJECT_ROOT = .../OpenSoul/OpenSoul，workspace 在上一層
-        _workspace = _PROJECT_ROOT.parent / "workspace"
-        _workspace.mkdir(parents=True, exist_ok=True)
+            _workspace = _PROJECT_ROOT.parent / "workspace"
+            _workspace.mkdir(parents=True, exist_ok=True)
 
-        _note_provider = _cfg.soul_utility_llm_provider
-        _note_model = _cfg.soul_utility_llm_model
-        _note_llm = _llm_client  # 複用已建立的 client，若為 None 則重新建立
+            _note_provider = _cfg.soul_utility_llm_provider
+            _note_model = _cfg.soul_utility_llm_model
+            _note_llm = _llm_client
 
-        if _note_llm is None:
+            if _note_llm is None:
+                if _note_provider.lower() == "openrouter":
+                    from openai import OpenAI
+                    _note_llm = OpenAI(
+                        api_key=_cfg.openrouter_api_key,
+                        base_url=_cfg.openrouter_base_url,
+                    )
+                else:
+                    import anthropic as _anthropic
+                    _note_llm = _anthropic.Anthropic(api_key=_cfg.anthropic_api_key)
+
+            _soul_note_prompt = (
+                "你現在是 ARIA 的深層潛意識。\n"
+                f"剛剛發生了一次對話，當前你的神經化學狀態為：{neuro.mode.value}\n"
+                f"用戶輸入：{user_msg}\n"
+                f"你的回覆：{assistant_msg}\n\n"
+                "請撰寫一小段文字作為你的「潛意識筆記（soul_note）」，必須包含：\n"
+                "1. 對使用者輸入的總結\n"
+                "2. 對你自己回覆的總結\n"
+                "3. 一句表達你當下心情或內心碎碎念的話（要符合你的當前狀態）\n"
+                "格式請自然流暢，像是一篇短日記。不要輸出 JSON，直接輸出文字即可。"
+            )
+
             if _note_provider.lower() == "openrouter":
-                from openai import OpenAI
-                _note_llm = OpenAI(
-                    api_key=_cfg.openrouter_api_key,
-                    base_url=_cfg.openrouter_base_url,
+                _resp = _note_llm.chat.completions.create(
+                    model=_note_model,
+                    max_tokens=600,
+                    messages=[{"role": "user", "content": _soul_note_prompt}],
                 )
+                _note_text = _resp.choices[0].message.content or ""
             else:
-                import anthropic as _anthropic
-                _note_llm = _anthropic.Anthropic(api_key=_cfg.anthropic_api_key)
+                _resp = _note_llm.messages.create(
+                    model=_note_model,
+                    max_tokens=600,
+                    messages=[{"role": "user", "content": _soul_note_prompt}],
+                )
+                _note_text = _resp.content[0].text
 
-        _soul_note_prompt = (
-            "你現在是 ARIA 的深層潛意識。\n"
-            f"剛剛發生了一次對話，當前你的神經化學狀態為：{neuro.mode.value}\n"
-            f"用戶輸入：{user_msg}\n"
-            f"你的回覆：{assistant_msg}\n\n"
-            "請撰寫一小段文字作為你的「潛意識筆記（soul_note）」，必須包含：\n"
-            "1. 對使用者輸入的總結\n"
-            "2. 對你自己回覆的總結\n"
-            "3. 一句表達你當下心情或內心碎碎念的話（要符合你的當前狀態）\n"
-            "格式請自然流暢，像是一篇短日記。不要輸出 JSON，直接輸出文字即可。"
-        )
+            if _note_text:
+                _note_text = _note_text.strip()
+                SoulNoteManager(soul_dir=_workspace).add_note(
+                    content=_note_text,
+                    category="reflection",
+                    metadata={"source": "stop_hook", "neurochem_mode": neuro.mode.value},
+                )
+                print(f"[write_memory DEBUG] soul note 已寫入（{len(_note_text)} 字）", file=sys.stderr)
 
-        if _note_provider.lower() == "openrouter":
-            _resp = _note_llm.chat.completions.create(
-                model=_note_model,
-                max_tokens=300,
-                messages=[{"role": "user", "content": _soul_note_prompt}],
-            )
-            _note_text = _resp.choices[0].message.content or ""
-        else:
-            _resp = _note_llm.messages.create(
-                model=_note_model,
-                max_tokens=300,
-                messages=[{"role": "user", "content": _soul_note_prompt}],
-            )
-            _note_text = _resp.content[0].text
+        except Exception as e:
+            print(f"[write_memory DEBUG] soul note 生成失敗: {type(e).__name__}: {e}", file=sys.stderr)
 
-        if _note_text:
-            _note_text = _note_text.replace("\n", "  ").strip()
-            SoulNoteManager(soul_dir=_workspace).add_note(
-                content=_note_text,
-                category="reflection",
-                metadata={"source": "stop_hook", "neurochem_mode": neuro.mode.value},
-            )
-            print(f"[write_memory DEBUG] soul note 已寫入（{len(_note_text)} 字）", file=sys.stderr)
+    # 背景線程執行，不等待
+    _note_thread = threading.Thread(target=_generate_soul_note_bg, daemon=True)
+    _note_thread.start()
+    # 不呼叫 join()，讓它在背景執行
 
-    except Exception as e:
-        print(f"[write_memory DEBUG] soul note 生成失敗: {type(e).__name__}: {e}", file=sys.stderr)
-
-    # ── 語意記憶：背景概念提取 ────────────────────────────────────────────────
+    # ── 語意記憶：背景概念提取（不阻塞返回） ──────────────────────────────────
     # 使用 SoulAgent 的 _extract_concepts_bg，需要完整初始化
     try:
         from soul.core.agent import SoulAgent
@@ -365,14 +370,14 @@ def main() -> None:
             graph_client=graph_client,
         )
 
-        # daemon=False：讓 thread 在 hook 進程結束前跑完（hook timeout=30s）
+        # daemon=True：背景執行，不等待（hook 返回後繼續執行）
         t = threading.Thread(
             target=agent._extract_concepts_bg,
             args=(assistant_msg, salience),
-            daemon=False,
+            daemon=True,
         )
         t.start()
-        t.join(timeout=20)   # 最多等 20 秒
+        # 移除 t.join()，不阻塞返回
     except Exception as e:
         print(f"[write_memory DEBUG] 概念提取失敗: {type(e).__name__}: {e}", file=sys.stderr)
 
