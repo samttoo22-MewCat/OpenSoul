@@ -175,8 +175,29 @@ def soul_judge_tool_endpoint(user_input: str) -> dict:
 
 # ── 入口 ──────────────────────────────────────────────────────────────────────
 
+def _cleanup_background_modules() -> None:
+    """關閉背景模組的 cleanup 函數。"""
+    global _dream_engine, _reflection_module
+
+    try:
+        if _dream_engine is not None:
+            _dream_engine.stop()
+            logger.info("[MCP] 作夢引擎已停止 ✓")
+    except Exception as e:
+        logger.warning(f"[MCP] 作夢引擎 shutdown 失敗: {e}")
+
+    try:
+        if _reflection_module is not None:
+            _reflection_module.stop()
+            logger.info("[MCP] 反思模組已停止 ✓")
+    except Exception as e:
+        logger.warning(f"[MCP] 反思模組 shutdown 失敗: {e}")
+
+
 if __name__ == "__main__":
     import argparse
+    import atexit
+
     parser = argparse.ArgumentParser(description="OpenSoul MCP Server")
     parser.add_argument(
         "--transport",
@@ -190,6 +211,9 @@ if __name__ == "__main__":
 
     # 初始化背景模組（反思 + 作夢）
     _init_background_modules()
+
+    # 註冊退出時的清理函數
+    atexit.register(_cleanup_background_modules)
 
     if args.transport != "stdio":
         # HTTP 模式：開啟 INFO log，方便在 setup_mcp.py 前景模式觀察
