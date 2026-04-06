@@ -114,19 +114,39 @@ def _ensure_soul_md(path: Path) -> None:
 
 
 def main() -> None:
+    # ── 快速檢查：OpenSoul 服務是否運作中？ ──────────────────────────────────────
+    # 若 6379 端口沒開，直接秒退，不輸出任何警告，也不載入後續重型模組
+    import socket
+    _sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    _sock.settimeout(0.1)  # 極短超時，確保不造成延遲
+    _is_active = (_sock.connect_ex(("localhost", 6379)) == 0)
+    _sock.close()
+
+    if not _is_active:
+        sys.exit(0)
+
     # ── 讀取 hook 輸入 ────────────────────────────────────────────────────────
     try:
         data = json.load(sys.stdin)
     except Exception:
-        sys.exit(0)  # 解析失敗靜默退出，不影響 Claude
+        sys.exit(0)
 
     user_message: str = data.get("prompt", "")
     if not user_message.strip():
         sys.exit(0)
 
-    # ── 前置條件 1：確認 SOUL.md（自動建立）──────────────────────────────────
+    # ── 只有在服務啟動時，才載入重型模組 ──────────────────────────────────────────
     try:
         from soul.core.config import settings
+        from soul.identity.soul import SoulLoader
+        from soul.memory.graph import get_graph_client, initialize_schemas
+        from soul.core.agent import EmbeddingService
+        from soul.memory.retrieval import EcphoryRetrieval
+    except ImportError:
+        sys.exit(0)
+
+    # ── 前置條件 1：確認 SOUL.md（自動建立）──────────────────────────────────
+    try:
         soul_path = settings.soul_md_path
     except Exception:
         soul_path = _PROJECT_ROOT / "workspace" / "SOUL.md"
@@ -134,48 +154,45 @@ def main() -> None:
     _ensure_soul_md(soul_path)
 
     # ── 前置條件 2：確認 FalkorDB ─────────────────────────────────────────────
+    graph_client = None
     try:
-        from soul.memory.graph import get_graph_client, initialize_schemas
         graph_client = get_graph_client()
         if not graph_client.ping():
             raise ConnectionError("ping 回傳 False")
         initialize_schemas(graph_client)
     except Exception as e:
-        print(
-            f"[OpenSoul] FalkorDB 無法連線：{e}\n"
-            "請執行 docker-compose up -d 後重試。",
-            file=sys.stderr,
-        )
-        sys.exit(2)
+        # 即使 active 檢查通過，實際連線仍可能失敗，此時也靜默退出或維持基礎模式
+        # 此處我們選擇靜默退出
+        sys.exit(0)
 
     # ── 前置條件 3：確認 Embedding API ────────────────────────────────────────
+    embedding = None
     try:
-        from soul.core.agent import EmbeddingService
         emb_svc = EmbeddingService()
         embedding = emb_svc.embed(user_message)
-    except Exception as e:
-        print(
-            f"[OpenSoul] Embedding API 無法連線：{e}\n"
-            "請確認 OPENAI_API_KEY 或 OPENROUTER_API_KEY 已設定。",
-            file=sys.stderr,
-        )
-        sys.exit(2)
+    except Exception:
+        # API 失敗不致死，但在無 embedding 情況下難以檢索記憶，故不噴 warning 直接跳過檢索
+        pass
 
     # ── 載入人格（SOUL.md）────────────────────────────────────────────────────
-    from soul.identity.soul import SoulLoader
     loader = SoulLoader(soul_path)
     soul = loader.load()
 
     # ── EcphoryRAG 記憶檢索 ───────────────────────────────────────────────────
-    from soul.memory.retrieval import EcphoryRetrieval
-    retrieval = EcphoryRetrieval(graph_client)
-    ctx = retrieval.retrieve(
-        query_embedding=embedding,
-        serotonin=soul.neurochem.serotonin,
-        dopamine=soul.neurochem.dopamine,
-        top_k=5,
-    )
-    memory_text = ctx.to_text()
+    memory_text = ""
+    ctx = None
+    if graph_client and embedding:
+        try:
+            retrieval = EcphoryRetrieval(graph_client)
+            ctx = retrieval.retrieve(
+                query_embedding=embedding,
+                serotonin=soul.neurochem.serotonin,
+                dopamine=soul.neurochem.dopamine,
+                top_k=5,
+            )
+            memory_text = ctx.to_text()
+        except Exception:
+            pass
 
     # ── 組合 additionalContext ────────────────────────────────────────────────
     mode_desc = {
@@ -229,7 +246,7 @@ def main() -> None:
     context_parts.append(skills_info)
 
     # 程序性記憶（已學會的操作序列）
-    if ctx.procedures:
+    if ctx and ctx.procedures:
         proc_lines: list[str] = []
         for proc in ctx.procedures[:3]:
             name = proc.get("name", "")
@@ -245,7 +262,7 @@ def main() -> None:
 
     # ── Claude Code 狀態提示（stderr，顯示於介面）─────────────────────────────
     mem_hint = f"情節:{soul.total_episodes} 概念:{soul.total_concepts}"
-    if ctx.procedures:
+    if ctx and ctx.procedures:
         mem_hint += f" 程序:{len(ctx.procedures)}"
     print(
         f"◆ OpenSoul [{soul.name}] {mode_desc}模式 | {mem_hint}",
